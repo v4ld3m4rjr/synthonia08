@@ -224,6 +224,57 @@ function todayLocalDateString() {
   return `${y}-${m}-${day}`;
 }
 
+// Formata 'YYYY-MM-DD' em dd/mm/aaaa para exibição amigável, sem passar por
+// Date() (evitar bug de fuso horário ao parsear string de data pura).
+function formatDateBR(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function DateSelector({ value, max, onChange }) {
+  const isRetroactive = value !== max;
+  return (
+    <div
+      style={{
+        maxWidth: 480,
+        margin: '0 auto',
+        width: '100%',
+        marginBottom: SPACING.md,
+        backgroundColor: COLORS.surface,
+        borderRadius: RADIUS.md,
+        boxShadow: SHADOW.card,
+        padding: SPACING.md,
+        boxSizing: 'border-box',
+      }}
+    >
+      <label style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, display: 'block', marginBottom: SPACING.xs }}>
+        Data do check-in
+      </label>
+      <input
+        type="date"
+        value={value}
+        max={max}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          width: '100%',
+          padding: SPACING.sm,
+          borderRadius: RADIUS.sm,
+          border: `1px solid ${COLORS.border}`,
+          fontFamily: FONT.family,
+          fontSize: FONT.size.md,
+          boxSizing: 'border-box',
+          color: COLORS.textPrimary,
+        }}
+      />
+      {isRetroactive && (
+        <div style={{ fontSize: FONT.size.xs, color: COLORS.moderate, marginTop: SPACING.xs, fontWeight: FONT.weight.medium }}>
+          Preenchendo check-in de {formatDateBR(value)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConfirmationScreen({ message, onDone }) {
   return (
     <div
@@ -263,14 +314,23 @@ function ConfirmationScreen({ message, onDone }) {
 }
 
 export default function CheckIn({ userId, onComplete }) {
+  const todayISO = useMemo(() => todayLocalDateString(), []);
   const [answers, setAnswers] = useState({});
   const [stepIndex, setStepIndex] = useState(0);
   const [done, setDone] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(todayISO);
   const [confirmationMessage] = useState(
     () => CONFIRMATION_MESSAGES[Math.floor(Math.random() * CONFIRMATION_MESSAGES.length)]
   );
+
+  const handleDateChange = (value) => {
+    if (!value) return;
+    // Bloqueia datas futuras mesmo que o usuário digite manualmente no campo
+    // (o atributo `max` só impede escolher via o seletor nativo do navegador).
+    setSelectedDate(value > todayISO ? todayISO : value);
+  };
 
   const flowQuestions = useMemo(() => {
     return CHECKIN_QUESTIONS.filter((q) => {
@@ -313,7 +373,7 @@ export default function CheckIn({ userId, onComplete }) {
     const treinouOntem = !!answers.treinou_ontem;
     return {
       atleta_id: userId,
-      data_referencia: todayLocalDateString(),
+      data_referencia: selectedDate,
       qualidade_sono: answers.qualidade_sono,
       duracao_sono_horas: HOUR_CHIP_MIDPOINT[answers.duracao_sono_horas] ?? null,
       fadiga_geral: answers.fadiga_geral,
@@ -362,7 +422,7 @@ export default function CheckIn({ userId, onComplete }) {
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: COLORS.background, display: 'flex', flexDirection: 'column', padding: SPACING.lg, fontFamily: FONT.family }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: SPACING.md, marginBottom: SPACING.xl }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: SPACING.md, marginBottom: SPACING.md }}>
         <button
           onClick={goBack}
           disabled={stepIndex === 0}
@@ -378,6 +438,8 @@ export default function CheckIn({ userId, onComplete }) {
           {stepIndex + 1}/{totalSteps}
         </span>
       </div>
+
+      <DateSelector value={selectedDate} max={todayISO} onChange={handleDateChange} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', maxWidth: 480, margin: '0 auto', width: '100%' }}>
         <div style={{ backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, boxShadow: SHADOW.card, padding: SPACING.lg }}>

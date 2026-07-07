@@ -2,17 +2,31 @@
 // Onboarding real: primeiro login cria a linha em public.profiles (nome +
 // papel coach/atleta), exigido pelo RLS (profiles_insert_own) e por toda a
 // lógica de vínculo coach-atleta do schema.
+//
+// Quando o papel escolhido é "atleta", também coletamos `nivel_atleta`
+// (iniciante/intermediario/avancado) — usado pelo motor de cálculo para
+// calibrar as métricas de carga de treino (TRIMP/ATL/CTL/monotonia) nas
+// primeiras semanas, antes de haver histórico suficiente do próprio atleta.
+// Coach não treina, então esse campo não se aplica e fica null.
 import React, { useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
 import { supabase } from './supabaseClient';
 
+const NIVEL_OPTIONS = [
+  { value: 'iniciante', label: 'Iniciante' },
+  { value: 'intermediario', label: 'Intermediário' },
+  { value: 'avancado', label: 'Avançado' },
+];
+
 export default function CompleteProfile({ userId, onProfileCreated }) {
   const [nome, setNome] = useState('');
   const [role, setRole] = useState('atleta');
+  const [nivelAtleta, setNivelAtleta] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const canSubmit = nome.trim().length >= 2 && !loading;
+  const isAtleta = role === 'atleta';
+  const canSubmit = nome.trim().length >= 2 && !loading && (!isAtleta || !!nivelAtleta);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,7 +38,13 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
 
     const { data, error: insertError } = await supabase
       .from('profiles')
-      .insert({ id: userId, role, nome_completo: nome.trim(), timezone })
+      .insert({
+        id: userId,
+        role,
+        nome_completo: nome.trim(),
+        timezone,
+        nivel_atleta: isAtleta ? nivelAtleta : null,
+      })
       .select()
       .single();
 
@@ -108,6 +128,43 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
               );
             })}
           </div>
+
+          {isAtleta && (
+            <div style={{ marginBottom: SPACING.lg }}>
+              <label style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, display: 'block', marginBottom: SPACING.xs }}>
+                Qual seu nível como atleta?
+              </label>
+              <div style={{ display: 'flex', gap: SPACING.sm }}>
+                {NIVEL_OPTIONS.map((opt) => {
+                  const selected = nivelAtleta === opt.value;
+                  return (
+                    <button
+                      type="button"
+                      key={opt.value}
+                      onClick={() => setNivelAtleta(opt.value)}
+                      style={{
+                        flex: 1,
+                        padding: `${SPACING.sm}px ${SPACING.xs}px`,
+                        borderRadius: RADIUS.md,
+                        border: `2px solid ${selected ? COLORS.textPrimary : COLORS.border}`,
+                        backgroundColor: selected ? COLORS.textPrimary : COLORS.surface,
+                        color: selected ? '#fff' : COLORS.textPrimary,
+                        fontWeight: FONT.weight.semibold,
+                        fontSize: FONT.size.sm,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, marginTop: SPACING.xs, marginBottom: 0 }}>
+                Usado pra calibrar as métricas de carga de treino nas primeiras semanas, antes de
+                termos histórico suficiente dos seus check-ins.
+              </p>
+            </div>
+          )}
 
           {error && (
             <div style={{ color: COLORS.risk, fontSize: FONT.size.sm, marginBottom: SPACING.sm }}>{error}</div>
