@@ -64,6 +64,61 @@ export function getSemaphoreLabel(value) {
   return 'Seguro';
 }
 
+/**
+ * Versão invertida de getSemaphoreColor para variáveis 0-10 onde ALTO = RUIM
+ * (ex.: Índice Janela de Lesão — é um índice de risco, não de prontidão).
+ * Usa os MESMOS cortes oficiais (THRESHOLDS.RISK_MAX / MODERATE_MAX), só que
+ * com o mapeamento de cor invertido: valor baixo = seguro, valor alto = risco.
+ */
+export function getSemaphoreColorInverted(value) {
+  if (value == null || Number.isNaN(value)) return COLORS.noCheckinGray;
+  if (value <= THRESHOLDS.RISK_MAX) return COLORS.safe;
+  if (value <= THRESHOLDS.MODERATE_MAX) return COLORS.moderate;
+  return COLORS.risk;
+}
+
+/**
+ * Cor semafórica para Monotonia (diária ou semanal). Valor bruto tipicamente
+ * entre 0.5 e 3.0+; alto = ruim (treino pouco variado, maior risco de lesão/
+ * overtraining). Limiar de risco consagrado na literatura: 2.0.
+ */
+export function getMonotoniaColor(value) {
+  if (value == null || Number.isNaN(value)) return COLORS.noCheckinGray;
+  if (value < 1.5) return COLORS.safe;
+  if (value < 2.0) return COLORS.moderate;
+  return COLORS.risk;
+}
+
+/**
+ * Cor semafórica para TSB (Training Stress Balance). Não é simplesmente
+ * "alto = bom" nem "alto = ruim" — segue a tabela de interpretação da
+ * literatura de carga de treino:
+ * - < -30: risco alto (fadiga não dissipada / overreaching não funcional)
+ * - -30 a -10: fadiga funcional acumulada (moderado)
+ * - -10 a 25: zona de treino produtivo normal / frescor ótimo (seguro)
+ * - > 25: possível destreino por falta de estímulo (moderado)
+ */
+export function getTsbColor(value) {
+  if (value == null || Number.isNaN(value)) return COLORS.noCheckinGray;
+  if (value < -30) return COLORS.risk;
+  if (value < -10) return COLORS.moderate;
+  if (value <= 25) return COLORS.safe;
+  return COLORS.moderate;
+}
+
+/**
+ * Cor semafórica invertida para variáveis percentuais 0-max onde ALTO = RUIM
+ * (ex.: %Exaustão, %Redução sugerida). Reescala o valor para a base 0-10 dos
+ * cortes oficiais (THRESHOLDS) e reusa a mesma lógica de getSemaphoreColorInverted.
+ * Ex.: max=100 (%Exaustão) -> <=34 safe, <=64 moderate, >64 risk.
+ *      max=70 (%Redução sugerida) -> <=23.8 safe, <=44.8 moderate, >44.8 risk.
+ */
+export function getPercentColorInverted(value, max = 100) {
+  if (value == null || Number.isNaN(value)) return COLORS.noCheckinGray;
+  const rescaled = (value / max) * 10;
+  return getSemaphoreColorInverted(rescaled);
+}
+
 export const SPACING = {
   xs: 4,
   sm: 8,
@@ -132,6 +187,10 @@ const theme = {
   BREAKPOINTS,
   getSemaphoreColor,
   getSemaphoreLabel,
+  getSemaphoreColorInverted,
+  getMonotoniaColor,
+  getTsbColor,
+  getPercentColorInverted,
   isAtLeast,
 };
 

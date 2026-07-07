@@ -14,28 +14,54 @@
 // Decisão de escopo: sem modal de detalhe / dot semafórico extra (como no
 // mockData.js antigo) — grade simples somente leitura, para não reintroduzir
 // a complexidade do protótipo anterior sem necessidade comprovada ainda.
+//
+// Cores semafóricas nos VALORES dos cards (decisão explícita do usuário):
+// - Prontidão, Recuperação física/mental, Pontuação de sono: alto=bom,
+//   usam getSemaphoreColor direto (escala 0-10 já pensada assim).
+// - Índice Janela de Lesão: é um índice de risco (alto=ruim), usa a versão
+//   invertida getSemaphoreColorInverted.
+// - Monotonia diária/semanal: usa getMonotoniaColor (limiar de risco = 2.0).
+// - TSB: usa getTsbColor (tabela de interpretação própria, não é
+//   simplesmente alto=bom nem alto=ruim).
+// - %Exaustão e %Redução sugerida: alto=ruim, usam getPercentColorInverted
+//   com o max correto de cada variável (100 e 70 respectivamente).
+// - TRIMP, ATL, CTL: SEM semáforo — são apenas quantidade de carga, sem
+//   "bom/ruim" isolado — ficam com a cor de texto padrão (neutra).
 import React, { useEffect, useState } from 'react';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
+import {
+  COLORS,
+  FONT,
+  RADIUS,
+  SHADOW,
+  SPACING,
+  getSemaphoreColor,
+  getSemaphoreColorInverted,
+  getMonotoniaColor,
+  getTsbColor,
+  getPercentColorInverted,
+} from './theme';
 import { supabase } from './supabaseClient';
 import TimeSeriesExplorer from './components/TimeSeriesExplorer';
 
 const CARD_DEFS = [
-  { key: 'prontidao', title: 'Prontidão', unit: '/10', decimals: 1 },
-  { key: 'trimp_carga_diaria', title: 'TRIMP (carga diária)', unit: 'u.a.', decimals: 0 },
-  { key: 'atl_7d', title: 'ATL', unit: '', decimals: 1 },
-  { key: 'ctl_28d', title: 'CTL', unit: '', decimals: 1 },
-  { key: 'tsb', title: 'TSB', unit: '', decimals: 1 },
-  { key: 'monotonia_diaria', title: 'Monotonia diária', unit: '', decimals: 2 },
-  { key: 'monotonia_semanal', title: 'Monotonia semanal', unit: '', decimals: 2 },
-  { key: 'indice_janela_lesao', title: 'Índice Janela de Lesão', unit: '/10', decimals: 1 },
-  { key: 'percentual_reducao_sugerida', title: '% Redução sugerida', unit: '%', decimals: 0 },
-  { key: 'recuperacao_fisica', title: 'Recuperação física', unit: '/10', decimals: 1 },
-  { key: 'recuperacao_mental', title: 'Recuperação mental', unit: '/10', decimals: 1 },
-  { key: 'pontuacao_sono', title: 'Pontuação de sono', unit: '/10', decimals: 1 },
+  { key: 'prontidao', title: 'Prontidão', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColor(v) },
+  { key: 'trimp_carga_diaria', title: 'TRIMP (carga diária)', unit: 'u.a.', decimals: 0, colorFn: null },
+  { key: 'atl_7d', title: 'ATL', unit: '', decimals: 1, colorFn: null },
+  { key: 'ctl_28d', title: 'CTL', unit: '', decimals: 1, colorFn: null },
+  { key: 'tsb', title: 'TSB', unit: '', decimals: 1, colorFn: (v) => getTsbColor(v) },
+  { key: 'monotonia_diaria', title: 'Monotonia diária', unit: '', decimals: 2, colorFn: (v) => getMonotoniaColor(v) },
+  { key: 'monotonia_semanal', title: 'Monotonia semanal', unit: '', decimals: 2, colorFn: (v) => getMonotoniaColor(v) },
+  { key: 'indice_janela_lesao', title: 'Índice Janela de Lesão', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColorInverted(v) },
+  { key: 'percentual_exaustao', title: '% Exaustão', unit: '%', decimals: 0, colorFn: (v) => getPercentColorInverted(v, 100) },
+  { key: 'percentual_reducao_sugerida', title: '% Redução sugerida', unit: '%', decimals: 0, colorFn: (v) => getPercentColorInverted(v, 70) },
+  { key: 'recuperacao_fisica', title: 'Recuperação física', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColor(v) },
+  { key: 'recuperacao_mental', title: 'Recuperação mental', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColor(v) },
+  { key: 'pontuacao_sono', title: 'Pontuação de sono', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColor(v) },
 ];
 
-function MetricCard({ title, value, unit, decimals }) {
+function MetricCard({ title, value, unit, decimals, colorFn }) {
   const hasValue = value != null && !Number.isNaN(value);
+  const valueColor = hasValue && colorFn ? colorFn(value) : COLORS.textPrimary;
   return (
     <div
       style={{
@@ -51,7 +77,7 @@ function MetricCard({ title, value, unit, decimals }) {
         {title}
       </div>
       {hasValue ? (
-        <div style={{ fontSize: FONT.size.xl, fontWeight: FONT.weight.bold, color: COLORS.textPrimary }}>
+        <div style={{ fontSize: FONT.size.xl, fontWeight: FONT.weight.bold, color: valueColor }}>
           {Number(value).toFixed(decimals)}
           <span style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, fontWeight: FONT.weight.medium }}> {unit}</span>
         </div>
@@ -128,6 +154,7 @@ function MetricsGrid({ userId }) {
             value={metrics[def.key]}
             unit={def.unit}
             decimals={def.decimals}
+            colorFn={def.colorFn}
           />
         ))}
       </div>
