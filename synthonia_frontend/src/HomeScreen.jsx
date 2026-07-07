@@ -6,6 +6,17 @@
 // (ver pendência #9 do QA final), esta tela mostra os DADOS BRUTOS que o
 // atleta reportou no check-in, de forma honesta, em vez de inventar um
 // score calculado que não existe de verdade ainda.
+//
+// Alertas no topo (acima do card de check-in de hoje):
+// - alerta_bemestar: variáveis subjetivas (sono/fadiga/estresse/humor/dor/HRV/FC
+//   repouso) fora do padrão pessoal, OU tendência de piora de 3 dias. Vem com
+//   texto pronto em `alerta_bemestar_motivo`. Cor âmbar/moderado — é um aviso de
+//   "preste atenção", não uma emergência.
+// - alerta_alto_risco: alerta de CARGA DE TREINO (monotonia+volume+TSB), já
+//   existente na tabela mas sem nenhum tratamento visual até agora. Só boolean,
+//   sem motivo pronto no banco — usamos texto genérico. Cor vermelha (risco),
+//   visualmente distinto do alerta de bem-estar (ícone, cor e texto diferentes).
+// Os dois alertas são INDEPENDENTES entre si e podem aparecer juntos.
 import React, { useEffect, useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
 import ProgressBar from './components/ProgressBar';
@@ -54,6 +65,72 @@ function MetricRow({ label, value, unit }) {
   );
 }
 
+// Banner de alerta de BEM-ESTAR (variáveis subjetivas fora do padrão pessoal
+// ou em tendência de piora). Âmbar/moderado — "preste atenção", não é
+// emergência médica. Vem SEMPRE com texto pronto (`alerta_bemestar_motivo`).
+function BemEstarAlertBanner({ motivo }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: SPACING.sm,
+        backgroundColor: '#FFF7E8',
+        border: `1px solid ${COLORS.moderate}`,
+        borderLeft: `5px solid ${COLORS.moderate}`,
+        borderRadius: RADIUS.md,
+        padding: SPACING.md,
+      }}
+    >
+      <div style={{ fontSize: 24, lineHeight: 1 }} aria-hidden="true">⚠️</div>
+      <div>
+        <div style={{ fontSize: FONT.size.md, fontWeight: FONT.weight.semibold, color: COLORS.textPrimary }}>
+          Atenção ao seu bem-estar
+        </div>
+        {motivo && (
+          <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, marginTop: 4 }}>
+            {motivo}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Banner de alerta de ALTO RISCO DE CARGA DE TREINO (monotonia+volume+TSB).
+// Vermelho/risco — diferente em cor, ícone e posição do alerta de bem-estar,
+// já que representa um problema diferente (carga de treino, não subjetivo).
+// Não tem texto de motivo pronto no banco (só o boolean), então usamos uma
+// mensagem genérica.
+function AltoRiscoCargaAlertBanner() {
+  return (
+    <div
+      role="alert"
+      style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: SPACING.sm,
+        backgroundColor: '#FDECEC',
+        border: `1px solid ${COLORS.risk}`,
+        borderLeft: `5px solid ${COLORS.risk}`,
+        borderRadius: RADIUS.md,
+        padding: SPACING.md,
+      }}
+    >
+      <div style={{ fontSize: 24, lineHeight: 1 }} aria-hidden="true">🚨</div>
+      <div>
+        <div style={{ fontSize: FONT.size.md, fontWeight: FONT.weight.semibold, color: COLORS.textPrimary }}>
+          Carga de treino em zona de risco
+        </div>
+        <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, marginTop: 4 }}>
+          Carga de treino em zona de risco — considere reduzir hoje.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SONO_LABELS = ['', 'Muito ruim', 'Ruim', 'Meio fraca', 'Regular', 'Boa', 'Muito boa', 'Excelente'];
 const FADIGA_LABELS = ['', 'Exaustão total', 'Muito alta', 'Alta', 'Moderada', 'Leve', 'Muito leve', 'Nenhuma'];
 
@@ -61,6 +138,7 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
   const [loading, setLoading] = useState(true);
   const [checkin, setCheckin] = useState(null);
   const [error, setError] = useState(null);
+  const [alertMetrics, setAlertMetrics] = useState(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -88,6 +166,32 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
     return () => { cancelled = true; };
   }, [userId]);
 
+  // Alertas (bem-estar + alto risco de carga): busca o registro mais recente
+  // de metricas_diarias. Se não houver nenhuma linha ainda (histórico muito
+  // novo), simplesmente não mostra nenhum banner (sem erro visível ao usuário).
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function loadAlerts() {
+      const { data, error: fetchError } = await supabase
+        .from('metricas_diarias')
+        .select('alerta_bemestar, alerta_bemestar_motivo, alerta_alto_risco, data_referencia')
+        .eq('atleta_id', userId)
+        .order('data_referencia', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (fetchError) {
+        // Falha silenciosa: alertas são um plus, não devem quebrar a Home.
+        setAlertMetrics(null);
+        return;
+      }
+      setAlertMetrics(data || null);
+    }
+    loadAlerts();
+    return () => { cancelled = true; };
+  }, [userId]);
+
   return (
     <div style={{ backgroundColor: COLORS.background, minHeight: '100vh', padding: SPACING.md, fontFamily: FONT.family }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md }}>
@@ -106,6 +210,9 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
       </header>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
+        {alertMetrics?.alerta_alto_risco && <AltoRiscoCargaAlertBanner />}
+        {alertMetrics?.alerta_bemestar && <BemEstarAlertBanner motivo={alertMetrics.alerta_bemestar_motivo} />}
+
         {error && (
           <SectionCard style={{ color: COLORS.risk }}>Não foi possível carregar seu check-in de hoje: {error}</SectionCard>
         )}
