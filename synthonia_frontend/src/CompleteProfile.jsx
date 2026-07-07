@@ -8,8 +8,12 @@
 // calibrar as métricas de carga de treino (TRIMP/ATL/CTL/monotonia) nas
 // primeiras semanas, antes de haver histórico suficiente do próprio atleta.
 // Coach não treina, então esse campo não se aplica e fica null.
+//
+// Repaginação visual: mesmo tratamento de cabeçalho com gradiente de marca
+// da tela de Auth (consistência de onboarding), botões de seleção usando
+// brandPrimary em vez do preto genérico anterior, alvos de toque >= 44px.
 import React, { useState } from 'react';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
+import { BRAND_GRADIENT_CSS, COLORS, FONT, RADIUS, SHADOW, SPACING, TOUCH_TARGET_MIN } from './theme';
 import { supabase } from './supabaseClient';
 
 const NIVEL_OPTIONS = [
@@ -75,16 +79,24 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
           backgroundColor: COLORS.surface,
           borderRadius: RADIUS.lg,
           boxShadow: SHADOW.card,
-          padding: SPACING.xl,
+          overflow: 'hidden',
         }}
       >
-        <h2 style={{ fontSize: FONT.size.lg, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, margin: 0 }}>
-          Antes de começar
-        </h2>
-        <p style={{ color: COLORS.textSecondary, marginTop: SPACING.xs, marginBottom: SPACING.lg }}>
-          Como podemos te chamar, e você é coach ou atleta?
-        </p>
+        <div
+          style={{
+            background: BRAND_GRADIENT_CSS,
+            padding: `${SPACING.lg}px ${SPACING.xl}px`,
+          }}
+        >
+          <h2 style={{ fontSize: FONT.size.title, fontWeight: FONT.weight.bold, color: '#fff', margin: 0, textShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+            Antes de começar
+          </h2>
+          <p style={{ color: 'rgba(255,255,255,0.92)', marginTop: SPACING.xs, marginBottom: 0, fontSize: FONT.size.sm }}>
+            Como podemos te chamar, e você é coach ou atleta?
+          </p>
+        </div>
 
+        <div style={{ padding: SPACING.xl }}>
         <form onSubmit={handleSubmit}>
           <input
             type="text"
@@ -100,6 +112,7 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
               fontSize: FONT.size.md,
               boxSizing: 'border-box',
               marginBottom: SPACING.md,
+              minHeight: TOUCH_TARGET_MIN,
             }}
           />
 
@@ -113,14 +126,16 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
                   onClick={() => setRole(r)}
                   style={{
                     flex: 1,
+                    minHeight: TOUCH_TARGET_MIN,
                     padding: SPACING.md,
                     borderRadius: RADIUS.md,
-                    border: `2px solid ${selected ? COLORS.textPrimary : COLORS.border}`,
-                    backgroundColor: selected ? COLORS.textPrimary : COLORS.surface,
+                    border: `2px solid ${selected ? COLORS.brandPrimary : COLORS.border}`,
+                    backgroundColor: selected ? COLORS.brandPrimary : COLORS.surface,
                     color: selected ? '#fff' : COLORS.textPrimary,
                     fontWeight: FONT.weight.semibold,
                     cursor: 'pointer',
                     textTransform: 'capitalize',
+                    transition: 'all 0.15s ease',
                   }}
                 >
                   {r}
@@ -144,14 +159,16 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
                       onClick={() => setNivelAtleta(opt.value)}
                       style={{
                         flex: 1,
+                        minHeight: TOUCH_TARGET_MIN,
                         padding: `${SPACING.sm}px ${SPACING.xs}px`,
                         borderRadius: RADIUS.md,
-                        border: `2px solid ${selected ? COLORS.textPrimary : COLORS.border}`,
-                        backgroundColor: selected ? COLORS.textPrimary : COLORS.surface,
+                        border: `2px solid ${selected ? COLORS.brandPrimary : COLORS.border}`,
+                        backgroundColor: selected ? COLORS.brandPrimary : COLORS.surface,
                         color: selected ? '#fff' : COLORS.textPrimary,
                         fontWeight: FONT.weight.semibold,
                         fontSize: FONT.size.sm,
                         cursor: 'pointer',
+                        transition: 'all 0.15s ease',
                       }}
                     >
                       {opt.label}
@@ -175,19 +192,23 @@ export default function CompleteProfile({ userId, onProfileCreated }) {
             disabled={!canSubmit}
             style={{
               width: '100%',
+              minHeight: TOUCH_TARGET_MIN,
               padding: SPACING.md,
               borderRadius: RADIUS.pill,
               border: 'none',
-              backgroundColor: canSubmit ? COLORS.textPrimary : COLORS.border,
+              backgroundColor: canSubmit ? COLORS.brandPrimary : COLORS.border,
               color: canSubmit ? '#fff' : COLORS.textTertiary,
               fontWeight: FONT.weight.semibold,
               fontSize: FONT.size.md,
               cursor: canSubmit ? 'pointer' : 'default',
+              boxShadow: canSubmit ? SHADOW.brandGlow : 'none',
+              transition: 'background-color 0.15s ease',
             }}
           >
             {loading ? 'Aguarde…' : 'Começar'}
           </button>
         </form>
+        </div>
       </div>
     </div>
   );

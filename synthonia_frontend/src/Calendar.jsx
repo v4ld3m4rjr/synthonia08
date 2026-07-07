@@ -4,6 +4,10 @@
 // isso é exatamente o tipo de "dado fabricado" que o app não pode mostrar).
 // Célula por dia colorida pela faixa de prontidão real. Dias sem check-in:
 // cinza hachurado. Dia futuro: cinza claro, sem número. Clique abre detalhe.
+//
+// Repaginação visual: cores semafóricas das células/legenda INTOCADAS
+// (sinalização funcional de saúde). Apenas cabeçalho do mês e tipografia
+// das legendas foram revisados para o novo sistema de marca.
 import React, { useEffect, useMemo, useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING, getSemaphoreColor, getSemaphoreLabel } from './theme';
 import { supabase } from './supabaseClient';
@@ -107,7 +111,7 @@ function DayDetailModal({ dayData, onClose }) {
           <button
             onClick={onClose}
             aria-label="Fechar"
-            style={{ border: 'none', background: 'none', fontSize: FONT.size.lg, cursor: 'pointer', color: COLORS.textTertiary }}
+            style={{ border: 'none', background: 'none', fontSize: FONT.size.xl, cursor: 'pointer', color: COLORS.textTertiary, minWidth: 44, minHeight: 44 }}
           >
             ×
           </button>
@@ -203,7 +207,7 @@ export default function Calendar({ userId }) {
   return (
     <div style={{ backgroundColor: COLORS.background, minHeight: '100vh', padding: SPACING.md, fontFamily: FONT.family }}>
       <HatchedPattern />
-      <div style={{ fontSize: FONT.size.lg, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, marginBottom: SPACING.md }}>
+      <div style={{ fontSize: FONT.size.title, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, marginBottom: SPACING.md }}>
         {MONTH_NAMES[month]} {year}
       </div>
 

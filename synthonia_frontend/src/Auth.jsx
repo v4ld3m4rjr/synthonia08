@@ -4,8 +4,12 @@
 // cada conta criada aqui vira uma linha em auth.users, isolada por RLS de
 // todas as tabelas (profiles, checkins, metricas_diarias etc — ver
 // synthonia_backend_schema.md).
+//
+// Repaginação visual: faixa superior com o gradiente de marca (identidade
+// SynthonIA — quente->frio, ver theme.js) por trás do wordmark, dando
+// personalidade forte já na primeira tela sem exigir imagens/assets novos.
 import React, { useState } from 'react';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
+import { BRAND_GRADIENT_CSS, COLORS, FONT, RADIUS, SHADOW, SPACING, TOUCH_TARGET_MIN } from './theme';
 import { supabase } from './supabaseClient';
 
 const inputStyle = {
@@ -17,19 +21,23 @@ const inputStyle = {
   fontSize: FONT.size.md,
   boxSizing: 'border-box',
   marginBottom: SPACING.md,
+  minHeight: TOUCH_TARGET_MIN,
 };
 
 const buttonStyle = (enabled) => ({
   width: '100%',
+  minHeight: TOUCH_TARGET_MIN,
   padding: SPACING.md,
   borderRadius: RADIUS.pill,
   border: 'none',
-  backgroundColor: enabled ? COLORS.textPrimary : COLORS.border,
+  backgroundColor: enabled ? COLORS.brandPrimary : COLORS.border,
   color: enabled ? '#fff' : COLORS.textTertiary,
   fontWeight: FONT.weight.semibold,
   fontSize: FONT.size.md,
   cursor: enabled ? 'pointer' : 'default',
   marginTop: SPACING.sm,
+  boxShadow: enabled ? SHADOW.brandGlow : 'none',
+  transition: 'background-color 0.15s ease',
 });
 
 export default function Auth({ onAuthenticated }) {
@@ -101,52 +109,85 @@ export default function Auth({ onAuthenticated }) {
           backgroundColor: COLORS.surface,
           borderRadius: RADIUS.lg,
           boxShadow: SHADOW.card,
-          padding: SPACING.xl,
+          overflow: 'hidden',
         }}
       >
-        <h1 style={{ fontSize: FONT.size.xl, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, textAlign: 'center', margin: 0 }}>
-          SynthonIA
-        </h1>
-        <p style={{ textAlign: 'center', color: COLORS.textSecondary, marginTop: SPACING.xs, marginBottom: SPACING.lg }}>
-          {mode === 'login' ? 'Entrar na sua conta' : 'Criar conta'}
-        </p>
-
-        <form onSubmit={handleSubmit}>
-          <input
-            type="email"
-            placeholder="seu@email.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            style={inputStyle}
-            autoComplete="email"
-          />
-          <input
-            type="password"
-            placeholder="Senha (mínimo 6 caracteres)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={inputStyle}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
-
-          {error && (
-            <div style={{ color: COLORS.risk, fontSize: FONT.size.sm, marginBottom: SPACING.sm }}>{error}</div>
-          )}
-          {infoMessage && (
-            <div style={{ color: COLORS.textSecondary, fontSize: FONT.size.sm, marginBottom: SPACING.sm }}>{infoMessage}</div>
-          )}
-
-          <button type="submit" disabled={!canSubmit} style={buttonStyle(canSubmit)}>
-            {loading ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
-          </button>
-        </form>
-
-        <button
-          onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setInfoMessage(null); }}
-          style={{ border: 'none', background: 'none', color: COLORS.textSecondary, marginTop: SPACING.lg, width: '100%', cursor: 'pointer', fontSize: FONT.size.sm }}
+        <div
+          style={{
+            background: BRAND_GRADIENT_CSS,
+            padding: `${SPACING.xl}px ${SPACING.xl}px ${SPACING.lg}px`,
+            textAlign: 'center',
+          }}
         >
-          {mode === 'login' ? 'Ainda não tem conta? Criar uma' : 'Já tem conta? Entrar'}
-        </button>
+          <h1
+            style={{
+              fontSize: FONT.size.xxl,
+              fontWeight: FONT.weight.extrabold,
+              color: '#fff',
+              textAlign: 'center',
+              margin: 0,
+              letterSpacing: -0.5,
+              textShadow: '0 2px 10px rgba(0,0,0,0.18)',
+            }}
+          >
+            SynthonIA
+          </h1>
+          <p
+            style={{
+              textAlign: 'center',
+              color: 'rgba(255,255,255,0.92)',
+              marginTop: SPACING.xs,
+              marginBottom: 0,
+              fontSize: FONT.size.sm,
+              fontWeight: FONT.weight.medium,
+            }}
+          >
+            Prontidão fisiológica, todos os dias
+          </p>
+        </div>
+
+        <div style={{ padding: SPACING.xl }}>
+          <p style={{ textAlign: 'center', color: COLORS.textSecondary, marginTop: 0, marginBottom: SPACING.lg, fontSize: FONT.size.md, fontWeight: FONT.weight.medium }}>
+            {mode === 'login' ? 'Entrar na sua conta' : 'Criar conta'}
+          </p>
+
+          <form onSubmit={handleSubmit}>
+            <input
+              type="email"
+              placeholder="seu@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              style={inputStyle}
+              autoComplete="email"
+            />
+            <input
+              type="password"
+              placeholder="Senha (mínimo 6 caracteres)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={inputStyle}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
+
+            {error && (
+              <div style={{ color: COLORS.risk, fontSize: FONT.size.sm, marginBottom: SPACING.sm }}>{error}</div>
+            )}
+            {infoMessage && (
+              <div style={{ color: COLORS.textSecondary, fontSize: FONT.size.sm, marginBottom: SPACING.sm }}>{infoMessage}</div>
+            )}
+
+            <button type="submit" disabled={!canSubmit} style={buttonStyle(canSubmit)}>
+              {loading ? 'Aguarde…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
+            </button>
+          </form>
+
+          <button
+            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setInfoMessage(null); }}
+            style={{ border: 'none', background: 'none', color: COLORS.brandBlue, marginTop: SPACING.lg, width: '100%', minHeight: TOUCH_TARGET_MIN, cursor: 'pointer', fontSize: FONT.size.sm, fontWeight: FONT.weight.medium }}
+          >
+            {mode === 'login' ? 'Ainda não tem conta? Criar uma' : 'Já tem conta? Entrar'}
+          </button>
+        </div>
       </div>
     </div>
   );

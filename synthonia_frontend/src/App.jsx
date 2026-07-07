@@ -1,6 +1,6 @@
 // App.jsx
 import React, { useEffect, useState } from 'react';
-import { COLORS, FONT } from './theme';
+import { COLORS, FONT, SPACING } from './theme';
 import { supabase } from './supabaseClient';
 import Auth from './Auth';
 import CompleteProfile from './CompleteProfile';
@@ -87,7 +87,7 @@ export default function App() {
   const userId = session.user.id;
 
   return (
-    <div style={{ fontFamily: FONT.family, paddingBottom: 64 }}>
+    <div style={{ fontFamily: FONT.family, paddingBottom: 76 }}>
       {screen === SCREENS.HOME && (
         <HomeScreen
           userId={userId}
@@ -111,6 +111,8 @@ export default function App() {
           display: 'flex',
           backgroundColor: COLORS.surface,
           borderTop: `1px solid ${COLORS.border}`,
+          paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+          boxShadow: '0 -2px 12px rgba(20, 20, 24, 0.05)',
         }}
       >
         {NAV_ITEMS.map((item) => {
@@ -119,22 +121,27 @@ export default function App() {
             <button
               key={item.key}
               onClick={() => setScreen(item.key)}
+              aria-current={active ? 'page' : undefined}
               style={{
                 flex: 1,
+                minHeight: 56,
                 border: 'none',
+                borderTop: active ? `3px solid ${COLORS.brandPrimary}` : '3px solid transparent',
                 background: 'none',
-                padding: '10px 0',
+                padding: `${SPACING.xs}px 0 10px`,
                 cursor: 'pointer',
-                color: active ? COLORS.textPrimary : COLORS.textTertiary,
-                fontWeight: active ? 600 : 400,
-                fontSize: 12,
+                color: active ? COLORS.brandPrimary : COLORS.textTertiary,
+                fontWeight: active ? FONT.weight.bold : FONT.weight.medium,
+                fontSize: FONT.size.xs,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
+                justifyContent: 'center',
                 gap: 2,
+                transition: 'color 0.15s ease',
               }}
             >
-              <span style={{ fontSize: 18 }} aria-hidden="true">{item.icon}</span>
+              <span style={{ fontSize: 20, filter: active ? 'none' : 'grayscale(35%) opacity(0.8)' }} aria-hidden="true">{item.icon}</span>
               {item.label}
             </button>
           );

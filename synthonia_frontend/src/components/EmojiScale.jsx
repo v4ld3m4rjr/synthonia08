@@ -6,8 +6,11 @@
 //   via long-press (mobile) ou o ícone de ajuda "i" (desktop/acessibilidade),
 //   que abre um painel com a lista completa (também é o que leitores de tela
 //   devem anunciar via aria-describedby/expanded panel).
+//
+// Repaginação visual: cor de seleção trocada de `textPrimary` (preto) para
+// `brandPrimary` (identidade de marca) — mantém contraste AA com texto branco.
 import React, { useRef, useState } from 'react';
-import { COLORS, FONT, RADIUS, SPACING } from '../theme';
+import { COLORS, FONT, RADIUS, SPACING, TOUCH_TARGET_MIN } from '../theme';
 
 const LONG_PRESS_MS = 450;
 
@@ -51,9 +54,10 @@ export default function EmojiScale({ labels, value, onChange }) {
               style={{
                 flex: 1,
                 aspectRatio: '1 / 1',
+                minHeight: TOUCH_TARGET_MIN,
                 borderRadius: RADIUS.md,
-                border: `2px solid ${isSelected ? COLORS.textPrimary : COLORS.border}`,
-                backgroundColor: isSelected ? COLORS.textPrimary : COLORS.surface,
+                border: `2px solid ${isSelected ? COLORS.brandPrimary : COLORS.border}`,
+                backgroundColor: isSelected ? COLORS.brandPrimary : COLORS.surface,
                 color: isSelected ? '#fff' : COLORS.textPrimary,
                 fontSize: 22,
                 display: 'flex',
@@ -106,9 +110,9 @@ export default function EmojiScale({ labels, value, onChange }) {
             border: `1px solid ${COLORS.border}`,
             backgroundColor: COLORS.surface,
             borderRadius: '50%',
-            width: 24,
-            height: 24,
-            minWidth: 24,
+            width: 28,
+            height: 28,
+            minWidth: 28,
             fontSize: FONT.size.xs,
             fontWeight: FONT.weight.bold,
             color: COLORS.textSecondary,
@@ -147,7 +151,7 @@ export default function EmojiScale({ labels, value, onChange }) {
               overflowY: 'auto',
             }}
           >
-            <div style={{ fontWeight: FONT.weight.bold, marginBottom: SPACING.md }}>Todas as opções</div>
+            <div style={{ fontWeight: FONT.weight.bold, marginBottom: SPACING.md, fontSize: FONT.size.md, color: COLORS.textPrimary }}>Todas as opções</div>
             {labels.map((l) => (
               <div
                 key={l.displayPosition}
@@ -171,10 +175,11 @@ export default function EmojiScale({ labels, value, onChange }) {
               style={{
                 marginTop: SPACING.md,
                 width: '100%',
+                minHeight: TOUCH_TARGET_MIN,
                 padding: SPACING.sm,
                 borderRadius: RADIUS.pill,
                 border: 'none',
-                backgroundColor: COLORS.textPrimary,
+                backgroundColor: COLORS.brandPrimary,
                 color: '#fff',
                 fontWeight: FONT.weight.semibold,
                 cursor: 'pointer',

@@ -1,5 +1,6 @@
 // theme.js
-// SynthonIA — Design System central (cores semafóricas, breakpoints, tipografia, espaçamento).
+// SynthonIA — Design System central (cores semafóricas, identidade de marca,
+// breakpoints, tipografia, espaçamento).
 // Escolha técnica: constantes JS puras (não styled-components) consumidas via `style` inline
 // nos componentes. Justificativa no README/relatório final entregue ao QA:
 // - Zero dependência extra (sem instalar styled-components/emotion) — reduz fricção nesta fase
@@ -10,10 +11,21 @@
 //   usamos `useState` para estados de hover/foco onde necessário e helpers de layout responsivo
 //   simples (ver `mq` helper). Se o projeto crescer, migrar para styled-components ou CSS Modules
 //   é direto porque todas as cores/tokens já estão centralizadas aqui.
+//
+// IDENTIDADE DE MARCA (repaginação visual, ver relatório da tarefa de design):
+// SynthonIA herda o espírito do gradiente pessoal de Val (quente -> frio,
+// esforço/vermelho -> descanso/azul — combina com o conceito de "prontidão
+// fisiológica"), mas com paleta e nome PRÓPRIOS do app — não é o símbolo de
+// infinito nem o wordmark da marca pessoal, só a sensação cromática.
+// Uso: chrome/identidade (botões primários, headers, nav ativo, login,
+// onboarding, acentos). NUNCA usar `brandGradient*`/`brandPrimary*` onde hoje
+// existe uma cor semafórica (safe/moderate/risk) — sinalização de saúde é
+// funcional, não estética, e está fora de escopo desta mudança.
 
 export const COLORS = {
   // Cores semafóricas — SEMPRE com o mesmo significado, independente da variável exibida.
   // Verde = seguro / bom. Âmbar = moderado / atenção. Vermelho = cautela / risco.
+  // NÃO ALTERADAS pela repaginação visual (sinalização funcional de saúde).
   safe: '#3DB56A',      // verde
   moderate: '#F5A623',  // âmbar
   risk: '#E5484D',       // vermelho
@@ -35,8 +47,36 @@ export const COLORS = {
   overlay: 'rgba(20, 20, 24, 0.55)',
 
   // Gradiente do slider contínuo de prontidão percebida (vermelho -> âmbar -> verde).
+  // Semafórico — não confundir com o gradiente de marca abaixo.
   gradientReadiness: 'linear-gradient(90deg, #E5484D 0%, #F5A623 50%, #3DB56A 100%)',
+
+  // --- Identidade de marca SynthonIA (chrome/UI, NÃO semafórico) ---------
+  // Stops do gradiente de marca: vermelho quente -> laranja -> dourado ->
+  // verde-azulado de transição -> azul frio. Espelha o espírito do gradiente
+  // pessoal de Val (esforço -> descanso) sem copiar o símbolo/wordmark dele.
+  brandGradientStart: '#E63925', // vermelho
+  brandGradientMid: '#F7941E',   // laranja (ponto médio quente)
+  brandGradientEnd: '#1C6EA4',   // azul
+
+  // Cor sólida de marca para botões/links/acentos onde um gradiente completo
+  // seria exagerado (inputs focados, links, ícones ativos). Laranja escolhido
+  // sobre o azul: maior calor/energia para CTAs de ação (ex. "fazer check-in"),
+  // e contraste ~4.55:1 com texto branco (AA para texto normal) — ver nota de
+  // contraste no relatório. O azul do gradiente fica reservado ao lado "calmo".
+  brandPrimary: '#E8720F',      // laranja queimado — contraste ~4.55:1 com #fff
+  brandPrimaryDark: '#C25A08',  // hover/active (mais escuro, mesmo matiz)
+
+  // Azul de marca sólido (extremidade "calma" do gradiente) — usado em
+  // acentos secundários (ex. ícone de calendário, estados "descanso").
+  brandBlue: '#1C6EA4',
+  brandBlueDark: '#154F79',
 };
+
+// Gradiente CSS de marca pronto para uso em `background` (headers, botões de
+// destaque, avatar/placeholder, splash/onboarding). 5 stops para uma
+// transição suave quente->fria mantendo o meio-tom dourado visível.
+export const BRAND_GRADIENT_CSS =
+  'linear-gradient(135deg, #E63925 0%, #F7941E 35%, #FBB917 55%, #3FA796 75%, #1C6EA4 100%)';
 
 // Cortes numéricos oficiais — usados tanto para Prontidão quanto para Janela de risco.
 // Mesmos 3 cortes em toda a base 0.0–10.0.
@@ -132,16 +172,27 @@ export const RADIUS = {
   sm: 8,
   md: 14,
   lg: 20,
+  xl: 28,
   pill: 999,
 };
 
+// Alvo de toque mínimo recomendado (WCAG 2.5.5 / Material Design ~44-48px).
+// Usar como min-height/min-width em botões, toggles e chips interativos.
+export const TOUCH_TARGET_MIN = 44;
+
 export const FONT = {
   family: "'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif",
+  // Escala com hierarquia clara: xs/sm/md/lg/title/xl/xxl/display.
+  // `title` foi adicionado para títulos de tela (ex. cabeçalho "SynthonIA" no
+  // login, "Olá, {nome}" na Home) — faltava um degrau entre lg (20) e xl (28)
+  // reservado especificamente para esse uso, em vez de reaproveitar xl/xxl
+  // ad-hoc como antes.
   size: {
     xs: 12,
     sm: 14,
     md: 16,
     lg: 20,
+    title: 24,
     xl: 28,
     xxl: 40,
     display: 56,
@@ -151,6 +202,7 @@ export const FONT = {
     medium: 500,
     semibold: 600,
     bold: 700,
+    extrabold: 800,
   },
 };
 
@@ -158,6 +210,9 @@ export const SHADOW = {
   card: '0 2px 8px rgba(20, 20, 24, 0.06)',
   cardHover: '0 4px 16px rgba(20, 20, 24, 0.10)',
   modal: '0 12px 40px rgba(20, 20, 24, 0.25)',
+  // Sombra colorida suave para botões/elementos com o gradiente/cor de marca
+  // (dá profundidade sem recorrer a preto puro).
+  brandGlow: '0 6px 20px rgba(230, 57, 37, 0.22)',
 };
 
 // Breakpoints (mobile-first). App é primariamente mobile, mas Dashboard/Calendar
@@ -179,9 +234,11 @@ export function isAtLeast(width, breakpoint) {
 
 const theme = {
   COLORS,
+  BRAND_GRADIENT_CSS,
   THRESHOLDS,
   SPACING,
   RADIUS,
+  TOUCH_TARGET_MIN,
   FONT,
   SHADOW,
   BREAKPOINTS,

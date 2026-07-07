@@ -1,5 +1,15 @@
+// CheckIn.jsx
+// Fluxo de check-in diário — 1 pergunta por tela, navegação linear com
+// possibilidade de voltar. É o fluxo mais usado do app, então recebe atenção
+// extra de UX na repaginação visual:
+// - Indicador de progresso "X/Y" já existia (ProgressBar + contador numérico)
+//   e foi mantido — apenas a cor da barra e dos controles passou a usar o
+//   novo `brandPrimary` no lugar do preto genérico anterior.
+// - Todos os controles de resposta (chips de hora, toggle sim/não, bandas de
+//   RPE, escala de emoji) e o botão de avançar/concluir agora usam
+//   `brandPrimary` como cor de seleção/ação, com alvo de toque mínimo de 44px.
 import React, { useMemo, useState } from 'react';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
+import { COLORS, FONT, RADIUS, SHADOW, SPACING, TOUCH_TARGET_MIN } from './theme';
 import ProgressBar from './components/ProgressBar';
 import EmojiScale from './components/EmojiScale';
 import { CHECKIN_QUESTIONS, CONFIRMATION_MESSAGES, HOUR_CHIP_MIDPOINT, SCALE_TYPE } from './checkinQuestions';
@@ -30,15 +40,17 @@ function HourChips({ chips, value, onChange }) {
             key={chip}
             onClick={() => onChange(chip)}
             style={{
+              minHeight: TOUCH_TARGET_MIN,
               padding: `${SPACING.sm}px ${SPACING.md}px`,
               borderRadius: RADIUS.pill,
-              border: `2px solid ${isSelected ? COLORS.textPrimary : COLORS.border}`,
-              backgroundColor: isSelected ? COLORS.textPrimary : COLORS.surface,
+              border: `2px solid ${isSelected ? COLORS.brandPrimary : COLORS.border}`,
+              backgroundColor: isSelected ? COLORS.brandPrimary : COLORS.surface,
               color: isSelected ? '#fff' : COLORS.textPrimary,
               fontFamily: FONT.family,
               fontSize: FONT.size.md,
               fontWeight: FONT.weight.medium,
               cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
             {chip}
@@ -60,7 +72,7 @@ function ContinuousSlider({ anchors, value, onChange }) {
         step={1}
         value={shown}
         onChange={(e) => onChange(Number(e.target.value))}
-        style={{ width: '100%', accentColor: COLORS.textPrimary, background: COLORS.gradientReadiness, borderRadius: 8 }}
+        style={{ width: '100%', height: 44, accentColor: COLORS.brandPrimary, background: COLORS.gradientReadiness, borderRadius: 8 }}
       />
       <div style={{ textAlign: 'center', fontSize: FONT.size.xxl, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, marginTop: SPACING.md }}>
         {shown}
@@ -82,14 +94,17 @@ function ToggleYesNo({ value, onChange }) {
             key={opt.label}
             onClick={() => onChange(opt.v)}
             style={{
+              minHeight: TOUCH_TARGET_MIN,
+              minWidth: 96,
               padding: `${SPACING.md}px ${SPACING.xl}px`,
               borderRadius: RADIUS.pill,
-              border: `2px solid ${selected ? COLORS.textPrimary : COLORS.border}`,
-              backgroundColor: selected ? COLORS.textPrimary : COLORS.surface,
+              border: `2px solid ${selected ? COLORS.brandPrimary : COLORS.border}`,
+              backgroundColor: selected ? COLORS.brandPrimary : COLORS.surface,
               color: selected ? '#fff' : COLORS.textPrimary,
               fontWeight: FONT.weight.semibold,
               fontSize: FONT.size.md,
               cursor: 'pointer',
+              transition: 'all 0.15s ease',
             }}
           >
             {opt.label}
@@ -113,13 +128,15 @@ function RpeBands({ bands, value, onChange }) {
               display: 'flex',
               alignItems: 'center',
               gap: SPACING.sm,
-              padding: SPACING.sm,
+              minHeight: TOUCH_TARGET_MIN,
+              padding: `${SPACING.sm}px ${SPACING.md}px`,
               borderRadius: RADIUS.md,
-              border: `2px solid ${selected ? COLORS.textPrimary : COLORS.border}`,
-              backgroundColor: selected ? COLORS.textPrimary : COLORS.surface,
+              border: `2px solid ${selected ? COLORS.brandPrimary : COLORS.border}`,
+              backgroundColor: selected ? COLORS.brandPrimary : COLORS.surface,
               color: selected ? '#fff' : COLORS.textPrimary,
               cursor: 'pointer',
               textAlign: 'left',
+              transition: 'all 0.15s ease',
             }}
           >
             <strong>{b.value}</strong>
@@ -140,6 +157,7 @@ function NumberInput({ value, onChange, placeholder }) {
       placeholder={placeholder}
       style={{
         width: '100%',
+        minHeight: TOUCH_TARGET_MIN,
         padding: SPACING.md,
         borderRadius: RADIUS.md,
         border: `1px solid ${COLORS.border}`,
@@ -169,7 +187,7 @@ function OptionalGroup({ answers, setAnswer }) {
       {!showNota ? (
         <button
           onClick={() => setShowNota(true)}
-          style={{ border: 'none', background: 'none', color: COLORS.textSecondary, cursor: 'pointer', fontSize: FONT.size.sm }}
+          style={{ border: 'none', background: 'none', color: COLORS.brandBlue, cursor: 'pointer', fontSize: FONT.size.sm, minHeight: TOUCH_TARGET_MIN, fontWeight: FONT.weight.medium }}
         >
           + adicionar comentário
         </button>
@@ -257,6 +275,7 @@ function DateSelector({ value, max, onChange }) {
         onChange={(e) => onChange(e.target.value)}
         style={{
           width: '100%',
+          minHeight: TOUCH_TARGET_MIN,
           padding: SPACING.sm,
           borderRadius: RADIUS.sm,
           border: `1px solid ${COLORS.border}`,
@@ -298,13 +317,15 @@ function ConfirmationScreen({ message, onDone }) {
         onClick={onDone}
         style={{
           marginTop: SPACING.lg,
+          minHeight: TOUCH_TARGET_MIN,
           padding: `${SPACING.sm}px ${SPACING.xl}px`,
           borderRadius: RADIUS.pill,
           border: 'none',
-          backgroundColor: COLORS.textPrimary,
+          backgroundColor: COLORS.brandPrimary,
           color: '#fff',
           fontWeight: FONT.weight.semibold,
           cursor: 'pointer',
+          boxShadow: SHADOW.brandGlow,
         }}
       >
         Voltar para a Home
@@ -427,14 +448,23 @@ export default function CheckIn({ userId, onComplete }) {
           onClick={goBack}
           disabled={stepIndex === 0}
           aria-label="Voltar"
-          style={{ border: 'none', background: 'none', fontSize: FONT.size.lg, color: stepIndex === 0 ? COLORS.textTertiary : COLORS.textPrimary, cursor: stepIndex === 0 ? 'default' : 'pointer', padding: 4 }}
+          style={{
+            border: 'none',
+            background: 'none',
+            fontSize: FONT.size.lg,
+            color: stepIndex === 0 ? COLORS.textTertiary : COLORS.textPrimary,
+            cursor: stepIndex === 0 ? 'default' : 'pointer',
+            padding: 4,
+            minWidth: TOUCH_TARGET_MIN,
+            minHeight: TOUCH_TARGET_MIN,
+          }}
         >
           ←
         </button>
         <div style={{ flex: 1 }}>
-          <ProgressBar value={stepIndex + 1} max={totalSteps} color={COLORS.safe} />
+          <ProgressBar value={stepIndex + 1} max={totalSteps} color={COLORS.brandPrimary} />
         </div>
-        <span style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, minWidth: 36, textAlign: 'right' }}>
+        <span style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, minWidth: 36, textAlign: 'right', fontWeight: FONT.weight.semibold }}>
           {stepIndex + 1}/{totalSteps}
         </span>
       </div>
@@ -464,14 +494,17 @@ export default function CheckIn({ userId, onComplete }) {
           disabled={!canAdvance || saving}
           style={{
             marginTop: SPACING.lg,
+            minHeight: TOUCH_TARGET_MIN,
             padding: SPACING.md,
             borderRadius: RADIUS.pill,
             border: 'none',
-            backgroundColor: canAdvance && !saving ? COLORS.textPrimary : COLORS.border,
+            backgroundColor: canAdvance && !saving ? COLORS.brandPrimary : COLORS.border,
             color: canAdvance && !saving ? '#fff' : COLORS.textTertiary,
             fontWeight: FONT.weight.semibold,
             fontSize: FONT.size.md,
             cursor: canAdvance && !saving ? 'pointer' : 'default',
+            boxShadow: canAdvance && !saving ? SHADOW.brandGlow : 'none',
+            transition: 'background-color 0.15s ease',
           }}
         >
           {saving ? 'Salvando…' : isLastStep ? 'Concluir check-in' : 'Próxima'}

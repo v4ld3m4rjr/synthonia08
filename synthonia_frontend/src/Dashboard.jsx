@@ -15,7 +15,8 @@
 // mockData.js antigo) — grade simples somente leitura, para não reintroduzir
 // a complexidade do protótipo anterior sem necessidade comprovada ainda.
 //
-// Cores semafóricas nos VALORES dos cards (decisão explícita do usuário):
+// Cores semafóricas nos VALORES dos cards (decisão explícita do usuário,
+// INTOCADA pela repaginação visual):
 // - Prontidão, Recuperação física/mental, Pontuação de sono: alto=bom,
 //   usam getSemaphoreColor direto (escala 0-10 já pensada assim).
 // - Índice Janela de Lesão: é um índice de risco (alto=ruim), usa a versão
@@ -27,6 +28,10 @@
 //   com o max correto de cada variável (100 e 70 respectivamente).
 // - TRIMP, ATL, CTL: SEM semáforo — são apenas quantidade de carga, sem
 //   "bom/ruim" isolado — ficam com a cor de texto padrão (neutra).
+//
+// Repaginação visual: apenas o "chrome" dos cards (borda superior sutil de
+// marca, título/tipografia, espaçamento) foi revisado — os `colorFn` acima
+// e os valores calculados continuam 100% intocados.
 import React, { useEffect, useState } from 'react';
 import {
   COLORS,
@@ -68,6 +73,7 @@ function MetricCard({ title, value, unit, decimals, colorFn }) {
         backgroundColor: COLORS.surface,
         borderRadius: RADIUS.md,
         boxShadow: SHADOW.card,
+        borderTop: `3px solid ${COLORS.brandPrimary}`,
         padding: SPACING.md,
         fontFamily: FONT.family,
         minWidth: 0,
@@ -173,7 +179,7 @@ export default function Dashboard({ embedded = false, userId }) {
       {!embedded && (
         <div
           style={{
-            fontSize: FONT.size.lg,
+            fontSize: FONT.size.title,
             fontWeight: FONT.weight.bold,
             color: COLORS.textPrimary,
             marginBottom: SPACING.md,

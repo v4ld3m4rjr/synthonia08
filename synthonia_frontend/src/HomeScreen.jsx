@@ -17,8 +17,13 @@
 //   sem motivo pronto no banco — usamos texto genérico. Cor vermelha (risco),
 //   visualmente distinto do alerta de bem-estar (ícone, cor e texto diferentes).
 // Os dois alertas são INDEPENDENTES entre si e podem aparecer juntos.
+//
+// Repaginação visual: cores semafóricas dos dois banners de alerta abaixo
+// NÃO foram tocadas (sinalização funcional de saúde). O restante do chrome
+// (header, CTA de check-in, cards) segue o novo sistema de marca — botão
+// principal usa `brandPrimary`, saudação com tipografia de título revisada.
 import React, { useEffect, useState } from 'react';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING } from './theme';
+import { COLORS, FONT, RADIUS, SHADOW, SPACING, TOUCH_TARGET_MIN } from './theme';
 import ProgressBar from './components/ProgressBar';
 import Dashboard from './Dashboard';
 import { supabase } from './supabaseClient';
@@ -45,7 +50,18 @@ function ReadinessCheckinCTA({ onStartCheckin }) {
       </div>
       <button
         onClick={onStartCheckin}
-        style={{ fontSize: FONT.size.md, fontWeight: FONT.weight.semibold, color: '#fff', backgroundColor: COLORS.textPrimary, border: 'none', borderRadius: RADIUS.pill, padding: `${SPACING.sm}px ${SPACING.xl}px`, cursor: 'pointer' }}
+        style={{
+          fontSize: FONT.size.md,
+          fontWeight: FONT.weight.semibold,
+          color: '#fff',
+          backgroundColor: COLORS.brandPrimary,
+          border: 'none',
+          borderRadius: RADIUS.pill,
+          padding: `${SPACING.sm}px ${SPACING.xl}px`,
+          minHeight: TOUCH_TARGET_MIN,
+          cursor: 'pointer',
+          boxShadow: SHADOW.brandGlow,
+        }}
       >
         Fazer check-in (1 min)
       </button>
@@ -68,6 +84,8 @@ function MetricRow({ label, value, unit }) {
 // Banner de alerta de BEM-ESTAR (variáveis subjetivas fora do padrão pessoal
 // ou em tendência de piora). Âmbar/moderado — "preste atenção", não é
 // emergência médica. Vem SEMPRE com texto pronto (`alerta_bemestar_motivo`).
+// Cores semafóricas INTOCADAS — sinalização funcional, fora de escopo da
+// repaginação visual.
 function BemEstarAlertBanner({ motivo }) {
   return (
     <div
@@ -102,7 +120,7 @@ function BemEstarAlertBanner({ motivo }) {
 // Vermelho/risco — diferente em cor, ícone e posição do alerta de bem-estar,
 // já que representa um problema diferente (carga de treino, não subjetivo).
 // Não tem texto de motivo pronto no banco (só o boolean), então usamos uma
-// mensagem genérica.
+// mensagem genérica. Cores semafóricas INTOCADAS.
 function AltoRiscoCargaAlertBanner() {
   return (
     <div
@@ -197,13 +215,23 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md }}>
         <div>
           <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary }}>Olá,</div>
-          <div style={{ fontSize: FONT.size.lg, fontWeight: FONT.weight.bold, color: COLORS.textPrimary }}>
+          <div style={{ fontSize: FONT.size.title, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, lineHeight: 1.2 }}>
             {profileName || '...'}
           </div>
         </div>
         <button
           onClick={onSignOut}
-          style={{ fontSize: FONT.size.xs, color: COLORS.textSecondary, backgroundColor: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: RADIUS.pill, padding: '6px 12px', cursor: 'pointer' }}
+          style={{
+            fontSize: FONT.size.xs,
+            color: COLORS.textSecondary,
+            backgroundColor: COLORS.surface,
+            border: `1px solid ${COLORS.border}`,
+            borderRadius: RADIUS.pill,
+            padding: '10px 16px',
+            minHeight: TOUCH_TARGET_MIN,
+            cursor: 'pointer',
+            fontWeight: FONT.weight.medium,
+          }}
         >
           Sair
         </button>
