@@ -8,17 +8,20 @@ import HomeScreen from './HomeScreen';
 import Dashboard from './Dashboard';
 import Calendar from './Calendar';
 import CheckIn from './CheckIn';
+import TreinoPlanejado from './TreinoPlanejado';
 
 const SCREENS = {
   HOME: 'HOME',
   DASHBOARD: 'DASHBOARD',
   CALENDAR: 'CALENDAR',
   CHECKIN: 'CHECKIN',
+  TREINOS: 'TREINOS',
 };
 
 const NAV_ITEMS = [
   { key: SCREENS.HOME, label: 'Home', icon: '🏠' },
   { key: SCREENS.DASHBOARD, label: 'Dashboard', icon: '📊' },
+  { key: SCREENS.TREINOS, label: 'Treinos', icon: '🏋️' },
   { key: SCREENS.CALENDAR, label: 'Calendário', icon: '📅' },
   { key: SCREENS.CHECKIN, label: 'Check-in', icon: '📝' },
 ];
@@ -97,6 +100,7 @@ export default function App() {
         />
       )}
       {screen === SCREENS.DASHBOARD && <Dashboard userId={userId} />}
+      {screen === SCREENS.TREINOS && <TreinoPlanejado userId={userId} />}
       {screen === SCREENS.CALENDAR && <Calendar userId={userId} />}
       {screen === SCREENS.CHECKIN && (
         <CheckIn userId={userId} onComplete={() => setScreen(SCREENS.HOME)} />

@@ -183,6 +183,42 @@ function StreakBadge({ streak }) {
   );
 }
 
+// Card "Treino de hoje" — só treinos planejados já CONFIRMADOS
+// (revisado_pelo_usuario=true). Mostra tipo, duração e RPE alvo, e — quando
+// já existir percentual_reducao_sugerida calculado para HOJE em
+// metricas_diarias — complementa com a sugestão de redução. Se não houver
+// sugestão calculada ainda, omitimos essa parte (não inventamos número).
+function TreinoHojeCard({ treino, percentualReducaoSugerida }) {
+  if (!treino) return null;
+  const partes = [];
+  if (treino.tipo_treino) partes.push(treino.tipo_treino);
+  if (treino.duracao_planejada_min != null) partes.push(`${treino.duracao_planejada_min}min`);
+  const resumo = partes.join(', ');
+  return (
+    <SectionCard style={{ borderLeft: `5px solid ${COLORS.brandPrimary}` }}>
+      <div style={{ fontSize: FONT.size.xs, textTransform: 'uppercase', letterSpacing: 0.6, color: COLORS.textTertiary, fontWeight: FONT.weight.semibold, marginBottom: SPACING.sm }}>
+        Treino de hoje
+      </div>
+      <div style={{ fontSize: FONT.size.md, color: COLORS.textPrimary }}>
+        <strong>{resumo || 'Treino planejado'}</strong>
+        {treino.rpe_planejado != null && (
+          <span style={{ color: COLORS.textSecondary }}>{`, RPE alvo ${treino.rpe_planejado}`}</span>
+        )}
+      </div>
+      {treino.descricao && (
+        <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, marginTop: 4 }}>
+          {treino.descricao}
+        </div>
+      )}
+      {percentualReducaoSugerida != null && (
+        <div style={{ fontSize: FONT.size.sm, color: COLORS.moderate, marginTop: SPACING.sm, fontWeight: FONT.weight.medium }}>
+          Sugestão: considerando sua prontidão atual, reduza aproximadamente {Number(percentualReducaoSugerida).toFixed(0)}% do volume/intensidade.
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
 const SONO_LABELS = ['', 'Muito ruim', 'Ruim', 'Meio fraca', 'Regular', 'Boa', 'Muito boa', 'Excelente'];
 const FADIGA_LABELS = ['', 'Exaustão total', 'Muito alta', 'Alta', 'Moderada', 'Leve', 'Muito leve', 'Nenhuma'];
 
@@ -222,6 +258,8 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
   const [error, setError] = useState(null);
   const [alertMetrics, setAlertMetrics] = useState(null);
   const [streak, setStreak] = useState(0);
+  const [treinoHoje, setTreinoHoje] = useState(null);
+  const [percentualReducaoSugerida, setPercentualReducaoSugerida] = useState(null);
 
   useEffect(() => {
     if (!userId) return;
@@ -257,7 +295,7 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
     async function loadAlerts() {
       const { data, error: fetchError } = await supabase
         .from('metricas_diarias')
-        .select('alerta_bemestar, alerta_bemestar_motivo, alerta_alto_risco, data_referencia')
+        .select('alerta_bemestar, alerta_bemestar_motivo, alerta_alto_risco, percentual_reducao_sugerida, data_referencia')
         .eq('atleta_id', userId)
         .order('data_referencia', { ascending: false })
         .limit(1)
@@ -269,8 +307,43 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
         return;
       }
       setAlertMetrics(data || null);
+      // Só usamos a sugestão de redução se ela vier calculada (e só quando o
+      // registro mais recente de metricas_diarias for de HOJE — senão seria
+      // uma sugestão desatualizada, referente a outro dia).
+      if (data && data.data_referencia === todayIsoDate() && data.percentual_reducao_sugerida != null) {
+        setPercentualReducaoSugerida(data.percentual_reducao_sugerida);
+      } else {
+        setPercentualReducaoSugerida(null);
+      }
     }
     loadAlerts();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  // Treino planejado de HOJE — só treinos já CONFIRMADOS pelo usuário
+  // (revisado_pelo_usuario=true). Rascunhos extraídos por IA e ainda não
+  // confirmados nunca aparecem aqui. Se não houver treino para hoje, a Home
+  // simplesmente não mostra a seção (sem estado vazio chamativo).
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function loadTreinoHoje() {
+      const { data, error: fetchError } = await supabase
+        .from('treino_planejado')
+        .select('*')
+        .eq('atleta_id', userId)
+        .eq('revisado_pelo_usuario', true)
+        .eq('data_planejada', todayIsoDate())
+        .limit(1)
+        .maybeSingle();
+      if (cancelled) return;
+      if (fetchError) {
+        setTreinoHoje(null);
+        return;
+      }
+      setTreinoHoje(data || null);
+    }
+    loadTreinoHoje();
     return () => { cancelled = true; };
   }, [userId]);
 
@@ -329,6 +402,8 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
       <div style={{ display: 'flex', flexDirection: 'column', gap: SPACING.md }}>
         {alertMetrics?.alerta_alto_risco && <AltoRiscoCargaAlertBanner />}
         {alertMetrics?.alerta_bemestar && <BemEstarAlertBanner motivo={alertMetrics.alerta_bemestar_motivo} />}
+
+        <TreinoHojeCard treino={treinoHoje} percentualReducaoSugerida={percentualReducaoSugerida} />
 
         {error && (
           <SectionCard style={{ color: COLORS.risk }}>Não foi possível carregar seu check-in de hoje: {error}</SectionCard>
