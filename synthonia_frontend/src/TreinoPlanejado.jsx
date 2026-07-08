@@ -228,6 +228,7 @@ function FormularioManual({ userId, initial, onSaved, onCancel, saveLabel }) {
     setError(null);
     const payload = {
       atleta_id: userId,
+      criado_por: userId,
       data_planejada: data,
       tipo_treino: tipo.trim(),
       duracao_planejada_min: duracao === '' ? null : Number(duracao),
