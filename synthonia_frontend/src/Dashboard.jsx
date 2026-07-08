@@ -416,6 +416,71 @@ function MetricsGrid({ userId }) {
   );
 }
 
+// Aviso visível ANTES da grade do Dashboard (pedido explícito do usuário),
+// explicando que Monotonia (diária/semanal) e Índice de Janela de Lesão
+// dependem de uma quantidade mínima de dias de histórico, citando o número
+// exato exigido por cada uma. Busca sua própria fatia mínima de dado
+// (mesmo padrão de outros componentes do Dashboard) e some sozinho quando os
+// dois requisitos já estiverem satisfeitos, para não poluir a tela à toa.
+function DataRequirementsNotice({ userId }) {
+  const [validCargaDays, setValidCargaDays] = useState(null);
+  const [totalDays, setTotalDays] = useState(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function load() {
+      const { data, error } = await supabase
+        .from('metricas_diarias')
+        .select('trimp_carga_diaria')
+        .eq('atleta_id', userId)
+        .order('data_referencia', { ascending: false })
+        .limit(35);
+      if (cancelled || error) return;
+      const rows = data || [];
+      setTotalDays(rows.length);
+      setValidCargaDays(rows.filter((r) => r.trimp_carga_diaria != null).length);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (validCargaDays == null || totalDays == null) return null;
+
+  const monotoniaOk = validCargaDays >= 3;
+  const lesaoOk = totalDays >= 28;
+  if (monotoniaOk && lesaoOk) return null; // já satisfeitos os dois — não precisa mais avisar
+
+  return (
+    <div
+      style={{
+        backgroundColor: '#EEF2F8',
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: RADIUS.md,
+        padding: SPACING.md,
+        marginBottom: SPACING.md,
+        fontFamily: FONT.family,
+        fontSize: FONT.size.sm,
+        color: COLORS.textSecondary,
+      }}
+    >
+      <div style={{ fontWeight: FONT.weight.semibold, color: COLORS.textPrimary, marginBottom: 4 }}>
+        ℹ️ Algumas métricas ainda estão acumulando histórico
+      </div>
+      <div style={{ marginBottom: monotoniaOk ? 0 : 2 }}>
+        {monotoniaOk
+          ? '✓ Monotonia diária/semanal: já disponível (mínimo de 3 dias com treino registrado atingido).'
+          : `• Monotonia diária e semanal precisam de pelo menos 3 dias com treino registrado — você tem ${validCargaDays}/3 até agora.`}
+      </div>
+      <div>
+        {lesaoOk
+          ? '✓ Índice de Janela de Lesão: já disponível (histórico de ~28 dias atingido).'
+          : `• Índice de Janela de Lesão precisa de aproximadamente 28 dias de check-ins acumulados — você tem ${totalDays}/28 até agora.`}
+      </div>
+    </div>
+  );
+}
+
 /**
  * @param {object} props
  * @param {boolean} [props.embedded] - quando usado dentro da Home, remove o
@@ -455,6 +520,7 @@ export default function Dashboard({ embedded = false, userId }) {
 
       {userId ? (
         <>
+          <DataRequirementsNotice userId={userId} />
           <FeaturedReducaoCard userId={userId} />
           <MetricsGrid userId={userId} />
           <TimeSeriesExplorer userId={userId} />
