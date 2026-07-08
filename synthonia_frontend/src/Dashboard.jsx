@@ -201,6 +201,87 @@ const HISTORY_KEYS = [
   'percentual_exaustao', 'percentual_reducao_sugerida',
 ];
 
+// Caixa de destaque de %Redução sugerida — pedido explícito do usuário para
+// aparecer como um dos PRIMEIROS itens do Dashboard, além do card equivalente
+// que já existe (intencionalmente duplicado) na grade de 12 métricas mais
+// abaixo. Busca sua própria fatia de dado (mesmo padrão de outros componentes
+// do Dashboard), sem depender do estado interno de MetricsGrid.
+function FeaturedReducaoCard({ userId }) {
+  const [metrics, setMetrics] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      setError(null);
+      const { data, error: fetchError } = await supabase
+        .from('metricas_diarias')
+        .select('data_referencia, percentual_reducao_sugerida, prontidao')
+        .eq('atleta_id', userId)
+        .order('data_referencia', { ascending: false })
+        .limit(10);
+      if (cancelled) return;
+      if (fetchError) {
+        setError(fetchError.message);
+        setLoading(false);
+        return;
+      }
+      const latest = (data || []).find((r) => r.prontidao != null) || null;
+      setMetrics(latest);
+      setLoading(false);
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (loading || error || !metrics) return null;
+
+  const value = metrics.percentual_reducao_sugerida;
+  const hasValue = value != null && !Number.isNaN(value);
+  const valueColor = hasValue ? getPercentColorInverted(value, 70) : COLORS.textTertiary;
+
+  return (
+    <div
+      style={{
+        backgroundColor: COLORS.surface,
+        borderRadius: RADIUS.lg,
+        boxShadow: SHADOW.card,
+        borderTop: `4px solid ${valueColor}`,
+        padding: SPACING.lg,
+        marginBottom: SPACING.md,
+        fontFamily: FONT.family,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: SPACING.md,
+        flexWrap: 'wrap',
+      }}
+    >
+      <div>
+        <div style={{ fontSize: FONT.size.xs, textTransform: 'uppercase', letterSpacing: 0.6, color: COLORS.textTertiary, fontWeight: FONT.weight.semibold, marginBottom: 4 }}>
+          Redução sugerida para hoje
+        </div>
+        <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, maxWidth: 320 }}>
+          Considerando prontidão, carga e risco calculados até agora — referente a {metrics.data_referencia}.
+        </div>
+      </div>
+      {hasValue ? (
+        <div style={{ fontSize: 40, fontWeight: FONT.weight.bold, color: valueColor, lineHeight: 1 }}>
+          {Number(value).toFixed(0)}
+          <span style={{ fontSize: FONT.size.lg, fontWeight: FONT.weight.medium, color: COLORS.textSecondary }}>%</span>
+        </div>
+      ) : (
+        <div style={{ fontSize: FONT.size.sm, color: COLORS.textTertiary, fontStyle: 'italic' }}>
+          Calculando… (dados insuficientes)
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MetricsGrid({ userId }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -347,6 +428,7 @@ export default function Dashboard({ embedded = false, userId }) {
 
       {userId ? (
         <>
+          <FeaturedReducaoCard userId={userId} />
           <MetricsGrid userId={userId} />
           <TimeSeriesExplorer userId={userId} />
           <PmcChart userId={userId} />

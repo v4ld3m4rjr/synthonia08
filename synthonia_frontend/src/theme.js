@@ -38,7 +38,7 @@ export const COLORS = {
   futureGray: '#F4F4F5',
 
   // Neutros / base UI.
-  background: '#FAFAFA',
+  background: '#E7E8EC', // escurecido um pouco (era quase branco) para destacar os cards/janelas por cima
   surface: '#FFFFFF',
   border: '#EAEAEA',
   textPrimary: '#1A1A1E',
