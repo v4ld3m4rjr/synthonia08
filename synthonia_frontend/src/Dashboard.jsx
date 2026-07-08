@@ -146,7 +146,33 @@ function computeTrend(key, current, previous) {
   };
 }
 
-function MetricCard({ title, value, unit, decimals, colorFn, explanation, trend }) {
+// Mensagem PROATIVA explicando quando uma métrica que hoje está
+// "Calculando... (dados insuficientes)" vai passar a aparecer, em vez do
+// usuário precisar clicar no ⓘ pra descobrir (pedido explícito do usuário).
+// Só se aplica às métricas que dependem de histórico acumulado: monotonia
+// (precisa de >=3 dias de carga de treino válida) e índice de janela de
+// lesão (precisa de ~28 dias de check-ins acumulados, pela regra de
+// fallback do motor de cálculo).
+function computeAvailabilityHint(key, history) {
+  const validCargaDays = history.filter((r) => r.trimp_carga_diaria != null).length;
+  const totalDays = history.length;
+
+  if (key === 'monotonia_diaria' || key === 'monotonia_semanal') {
+    if (validCargaDays >= 3) return null;
+    const faltam = 3 - validCargaDays;
+    return `Disponível após mais ${faltam} dia${faltam === 1 ? '' : 's'} com treino registrado (${validCargaDays}/3 até agora).`;
+  }
+
+  if (key === 'indice_janela_lesao') {
+    if (totalDays >= 28) return null;
+    const faltam = 28 - totalDays;
+    return `Disponível após ~${faltam} dia${faltam === 1 ? '' : 's'} a mais de check-ins acumulados (${totalDays}/28 até agora).`;
+  }
+
+  return null;
+}
+
+function MetricCard({ title, value, unit, decimals, colorFn, explanation, trend, unavailableHint }) {
   const hasValue = value != null && !Number.isNaN(value);
   const valueColor = hasValue && colorFn ? colorFn(value) : COLORS.textPrimary;
   return (
@@ -187,7 +213,7 @@ function MetricCard({ title, value, unit, decimals, colorFn, explanation, trend 
         </div>
       ) : (
         <div style={{ fontSize: FONT.size.sm, color: COLORS.textTertiary, fontStyle: 'italic' }}>
-          Calculando… (dados insuficientes)
+          {unavailableHint || 'Calculando… (dados insuficientes)'}
         </div>
       )}
     </div>
@@ -382,6 +408,7 @@ function MetricsGrid({ userId }) {
             colorFn={def.colorFn}
             explanation={METRIC_EXPLANATIONS[def.key]}
             trend={computeTrend(def.key, metrics[def.key], previousMetrics ? previousMetrics[def.key] : null)}
+            unavailableHint={metrics[def.key] == null ? computeAvailabilityHint(def.key, history) : null}
           />
         ))}
       </div>
