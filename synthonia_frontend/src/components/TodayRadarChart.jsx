@@ -12,21 +12,41 @@
 // Eixos cujo valor de origem é NULL são OMITIDOS do radar (nunca inventamos
 // valor) — o polígono é recalculado só com os eixos disponíveis, igualmente
 // espaçados em círculo.
+//
+// Cada vértice do radar leva o NOME curto da métrica escrito ao lado da
+// ponta do eixo (não só o valor numérico, que também aparece abaixo do
+// nome) — assim dá pra ler o radar sem depender da lista lateral. O SVG
+// usa viewBox com padding extra (SIZE_PAD) e os rótulos usam textAnchor
+// dinâmico (start/middle/end conforme o quadrante do ângulo) para o texto
+// nunca vazar da viewBox nas pontas do polígono.
 import React, { useEffect, useMemo, useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../theme';
 import { supabase } from '../supabaseClient';
 import { clamp } from './chartUtils';
 
-const SIZE = 260;
+const RADIUS_MAX = 78;
+const LABEL_OFFSET = 40;
+const VALUE_LABEL_OFFSET = 54;
+// Padding extra ao redor do círculo de eixos, calculado pra caber o texto do
+// rótulo mais o valor numérico embaixo dele sem sair do viewBox.
+const SIZE_PAD = 66;
+const SIZE = (RADIUS_MAX + LABEL_OFFSET) * 2 + SIZE_PAD;
 const CENTER = SIZE / 2;
-const RADIUS_MAX = 90;
-const LABEL_OFFSET = 34;
 
 function tsbNormalized(tsb) {
   if (tsb == null || Number.isNaN(tsb)) return null;
   if (tsb <= -40) return 0;
   if (tsb >= 40) return 10;
   return clamp(0, 10, 5 + tsb / 10);
+}
+
+// Escolhe o textAnchor conforme o quadrante horizontal do ângulo, pra
+// rótulos à direita alinharem à esquerda do ponto (e vice-versa), evitando
+// que o texto seja cortado pela borda da viewBox.
+function anchorForAngle(cosAngle) {
+  if (cosAngle > 0.3) return 'start';
+  if (cosAngle < -0.3) return 'end';
+  return 'middle';
 }
 
 export default function TodayRadarChart({ userId }) {
@@ -66,7 +86,7 @@ export default function TodayRadarChart({ userId }) {
       { key: 'recuperacao_fisica', label: 'Recup. física', value: metrics.recuperacao_fisica },
       { key: 'recuperacao_mental', label: 'Recup. mental', value: metrics.recuperacao_mental },
       { key: 'pontuacao_sono', label: 'Sono', value: metrics.pontuacao_sono },
-      { key: 'tsb_norm', label: 'TSB (normalizado)', value: tsbNormalized(metrics.tsb) },
+      { key: 'tsb_norm', label: 'TSB', value: tsbNormalized(metrics.tsb) },
     ];
     return candidates.filter((c) => c.value != null && !Number.isNaN(c.value));
   }, [metrics]);
@@ -78,13 +98,17 @@ export default function TodayRadarChart({ userId }) {
     const points = axes.map((axis, i) => {
       const angle = i * angleStep - Math.PI / 2; // começa no topo
       const r = (axis.value / 10) * RADIUS_MAX;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
       return {
-        x: CENTER + r * Math.cos(angle),
-        y: CENTER + r * Math.sin(angle),
-        labelX: CENTER + (RADIUS_MAX + LABEL_OFFSET) * Math.cos(angle),
-        labelY: CENTER + (RADIUS_MAX + LABEL_OFFSET) * Math.sin(angle),
-        axisEndX: CENTER + RADIUS_MAX * Math.cos(angle),
-        axisEndY: CENTER + RADIUS_MAX * Math.sin(angle),
+        x: CENTER + r * cosA,
+        y: CENTER + r * sinA,
+        labelX: CENTER + (RADIUS_MAX + LABEL_OFFSET) * cosA,
+        labelY: CENTER + (RADIUS_MAX + LABEL_OFFSET) * sinA,
+        valueLabelY: CENTER + (RADIUS_MAX + VALUE_LABEL_OFFSET) * sinA,
+        axisEndX: CENTER + RADIUS_MAX * cosA,
+        axisEndY: CENTER + RADIUS_MAX * sinA,
+        anchor: anchorForAngle(cosA),
         ...axis,
       };
     });
@@ -107,7 +131,7 @@ export default function TodayRadarChart({ userId }) {
         Radar do dia
       </div>
       <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, marginBottom: SPACING.md }}>
-        Snapshot do dia mais recente com prontidão calculada — recuperação física/mental, sono e equilíbrio de forma/fadiga (TSB), todos numa escala 0-10. Eixos sem dado são omitidos.
+        Snapshot do dia mais recente com prontidão calculada — recuperação física/mental, sono e equilíbrio de forma/fadiga (TSB), todos numa escala 0-10. Cada ponta do polígono traz o nome da métrica. Eixos sem dado são omitidos.
       </div>
 
       {loading && <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary }}>Carregando…</div>}
@@ -121,7 +145,7 @@ export default function TodayRadarChart({ userId }) {
 
       {!loading && !error && metrics && polygon && (
         <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: SPACING.lg }}>
-          <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ flexShrink: 0 }}>
+          <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} style={{ flexShrink: 0, maxWidth: '100%' }}>
             {polygon.rings.map((ring, i) => (
               <polygon key={i} points={ring} fill="none" stroke={COLORS.border} strokeWidth={1} />
             ))}
@@ -131,6 +155,34 @@ export default function TodayRadarChart({ userId }) {
             <path d={polygon.pathD} fill={COLORS.brandPrimary} fillOpacity={0.22} stroke={COLORS.brandPrimary} strokeWidth={2} strokeLinejoin="round" />
             {polygon.points.map((p, i) => (
               <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={COLORS.brandPrimary} stroke="#fff" strokeWidth={1.5} />
+            ))}
+            {/* Nome da métrica + valor, ao lado de cada ponta do eixo */}
+            {polygon.points.map((p, i) => (
+              <g key={`label-${i}`}>
+                <text
+                  x={p.labelX}
+                  y={p.labelY}
+                  textAnchor={p.anchor}
+                  dominantBaseline="middle"
+                  fontSize={FONT.size.xs}
+                  fontFamily={FONT.family}
+                  fontWeight={FONT.weight.semibold}
+                  fill={COLORS.textPrimary}
+                >
+                  {p.label}
+                </text>
+                <text
+                  x={p.labelX}
+                  y={p.valueLabelY}
+                  textAnchor={p.anchor}
+                  dominantBaseline="middle"
+                  fontSize={FONT.size.xs - 1}
+                  fontFamily={FONT.family}
+                  fill={COLORS.textTertiary}
+                >
+                  {p.value.toFixed(1)}/10
+                </text>
+              </g>
             ))}
           </svg>
           <div style={{ display: 'flex', flexDirection: 'column', gap: SPACING.sm }}>

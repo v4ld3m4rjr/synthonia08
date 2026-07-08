@@ -81,3 +81,22 @@ export function normalize(value, min, max) {
 export function clamp(min, max, value) {
   return Math.max(min, Math.min(max, value));
 }
+
+// Resolve colisão vertical entre rótulos de texto grudados no fim de várias
+// curvas sobrepostas no mesmo gráfico (ex.: TimeSeriesExplorer, PmcChart,
+// PrsVsCalculatedChart). Recebe uma lista de { y, ...resto } (uma por linha,
+// posição Y desejada pro rótulo) e devolve a mesma lista com `y` ajustado:
+// ordena por Y e, sempre que a distância entre dois rótulos vizinhos for
+// menor que `minGap`, empurra o de baixo pra abrir espaço. Resolve o caso
+// comum de duas curvas terminarem próximas em altura (rótulos colidiriam).
+export function resolveLabelCollisions(items, minGap = 14) {
+  const sorted = [...items].sort((a, b) => a.y - b.y);
+  for (let i = 1; i < sorted.length; i += 1) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    if (cur.y - prev.y < minGap) {
+      cur.y = prev.y + minGap;
+    }
+  }
+  return sorted;
+}

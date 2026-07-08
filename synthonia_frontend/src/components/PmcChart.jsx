@@ -10,10 +10,14 @@
 // suaves (Catmull-Rom, helper compartilhado em chartUtils.js) sobrepostas no
 // mesmo eixo Y, com legenda simples. TSB fica numa faixa própria embaixo
 // (barras fininhas, uma por dia com dado), alinhada ao mesmo eixo X de datas.
+// Cada curva (ATL/CTL) também ganha um rótulo de texto grudado no último
+// ponto (nome + cor da linha), com anti-colisão vertical via
+// resolveLabelCollisions (mesma técnica usada em TimeSeriesExplorer.jsx),
+// pra identificar cada curva sem depender só da legenda de cima.
 import React, { useEffect, useMemo, useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING, getTsbColor } from '../theme';
 import { supabase } from '../supabaseClient';
-import { formatDateShort, catmullRomPath, buildSegments, normalize } from './chartUtils';
+import { formatDateShort, catmullRomPath, buildSegments, normalize, resolveLabelCollisions } from './chartUtils';
 
 const SVG_WIDTH = 640;
 const PADDING_X = 14;
@@ -23,6 +27,8 @@ const CURVE_PADDING_BOTTOM = 10;
 const TSB_HEIGHT = 60;
 const TSB_GAP = 8;
 const AXIS_HEIGHT = 26;
+const LABEL_GUTTER_RIGHT = 40; // espaço reservado à direita pros rótulos ATL/CTL na ponta da curva
+const LABEL_MIN_GAP = 14;
 
 export default function PmcChart({ userId }) {
   const [rows, setRows] = useState([]);
@@ -53,12 +59,14 @@ export default function PmcChart({ userId }) {
     return () => { cancelled = true; };
   }, [userId]);
 
+  const chartWidth = SVG_WIDTH - LABEL_GUTTER_RIGHT;
+
   const chart = useMemo(() => {
     if (rows.length === 0) return null;
     const n = rows.length;
-    const innerWidth = SVG_WIDTH - PADDING_X * 2;
+    const innerWidth = chartWidth - PADDING_X * 2;
     const stepX = n > 1 ? innerWidth / (n - 1) : 0;
-    const singleX = SVG_WIDTH / 2;
+    const singleX = chartWidth / 2;
 
     // Escala compartilhada ATL/CTL: 0 até o máximo observado entre as duas
     // séries (arredondado pra cima, com uma margem de 10% pra não encostar
@@ -93,6 +101,19 @@ export default function PmcChart({ userId }) {
     const atlLine = buildLine('atl_7d');
     const ctlLine = buildLine('ctl_28d');
 
+    // Rótulos grudados na ponta de cada curva (ATL/CTL), com anti-colisão
+    // vertical caso as duas séries terminem em alturas próximas.
+    const rawEndLabels = [];
+    if (atlLine.points.length > 0) {
+      const p = atlLine.points[atlLine.points.length - 1];
+      rawEndLabels.push({ key: 'atl', x: p.x, y: p.y, color: '#D85A30', text: 'ATL' });
+    }
+    if (ctlLine.points.length > 0) {
+      const p = ctlLine.points[ctlLine.points.length - 1];
+      rawEndLabels.push({ key: 'ctl', x: p.x, y: p.y, color: '#378ADD', text: 'CTL' });
+    }
+    const endLabels = resolveLabelCollisions(rawEndLabels, LABEL_MIN_GAP);
+
     // TSB: uma barra fina por dia com valor não-nulo, cor semafórica própria
     // (getTsbColor). Escala simétrica em torno de 0, com max absoluto
     // observado (mínimo 20 pra barras pequenas não ficarem ilegíveis).
@@ -121,8 +142,8 @@ export default function PmcChart({ userId }) {
         label: formatDateShort(date),
       }));
 
-    return { atlLine, ctlLine, tsbBars, tsbMid, dateTicks, n };
-  }, [rows]);
+    return { atlLine, ctlLine, endLabels, tsbBars, tsbMid, dateTicks, n };
+  }, [rows, chartWidth]);
 
   const svgHeight = CURVE_HEIGHT + TSB_GAP + TSB_HEIGHT + AXIS_HEIGHT;
 
@@ -132,7 +153,7 @@ export default function PmcChart({ userId }) {
         PMC — Fitness, Fadiga e Forma
       </div>
       <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, marginBottom: SPACING.sm }}>
-        ATL (fadiga aguda, 7 dias) e CTL (fitness/forma, 28 dias) na mesma escala de carga. A faixa abaixo mostra o TSB (equilíbrio forma-fadiga) de cada dia, colorido pelo mesmo semáforo dos cards.
+        ATL (fadiga aguda, 7 dias) e CTL (fitness/forma, 28 dias) na mesma escala de carga, cada curva rotulada na própria ponta. A faixa abaixo mostra o TSB (equilíbrio forma-fadiga) de cada dia, colorido pelo mesmo semáforo dos cards.
       </div>
 
       <div style={{ display: 'flex', gap: SPACING.md, marginBottom: SPACING.sm, fontSize: FONT.size.xs }}>
@@ -173,6 +194,22 @@ export default function PmcChart({ userId }) {
             ))}
             {chart.atlLine.points.map((p) => (
               <circle key={`atl-pt-${p.rowIndex}`} cx={p.x} cy={p.y} r={2.5} fill="#D85A30" stroke="#fff" strokeWidth={1} />
+            ))}
+
+            {/* Rótulos de texto grudados na ponta de cada curva */}
+            {chart.endLabels.map((lbl) => (
+              <text
+                key={`end-label-${lbl.key}`}
+                x={lbl.x + 8}
+                y={lbl.y + 3}
+                textAnchor="start"
+                fontSize={FONT.size.xs}
+                fontFamily={FONT.family}
+                fontWeight={FONT.weight.bold}
+                fill={lbl.color}
+              >
+                {lbl.text}
+              </text>
             ))}
 
             {/* Faixa TSB */}

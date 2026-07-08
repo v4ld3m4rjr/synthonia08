@@ -5,11 +5,14 @@
 // cada tabela). Duas curvas suaves sobrepostas na mesma escala 0-10, cores
 // distintas + legenda. Nos dias em que divergencia_prs_alta = true, o ponto
 // da prontidão calculada ganha destaque visual (círculo maior + cor de
-// alerta) para chamar atenção de quando as duas medidas descolam.
+// alerta) para chamar atenção de quando as duas medidas descolam. Cada curva
+// também ganha um rótulo de texto grudado no último ponto (nome + cor da
+// linha), com anti-colisão vertical via resolveLabelCollisions (mesma
+// técnica de TimeSeriesExplorer.jsx / PmcChart.jsx).
 import React, { useEffect, useMemo, useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../theme';
 import { supabase } from '../supabaseClient';
-import { formatDateShort, catmullRomPath, buildSegments, normalize } from './chartUtils';
+import { formatDateShort, catmullRomPath, buildSegments, normalize, resolveLabelCollisions } from './chartUtils';
 
 const SVG_WIDTH = 640;
 const PADDING_X = 14;
@@ -17,6 +20,8 @@ const CHART_HEIGHT = 160;
 const PADDING_TOP = 20;
 const PADDING_BOTTOM = 12;
 const AXIS_HEIGHT = 26;
+const LABEL_GUTTER_RIGHT = 96; // espaço reservado à direita pros rótulos na ponta das curvas
+const LABEL_MIN_GAP = 14;
 
 const PRS_COLOR = '#7F77DD';
 const CALC_COLOR = '#0F6E56';
@@ -70,12 +75,14 @@ export default function PrsVsCalculatedChart({ userId }) {
     return () => { cancelled = true; };
   }, [userId]);
 
+  const chartWidth = SVG_WIDTH - LABEL_GUTTER_RIGHT;
+
   const chart = useMemo(() => {
     if (rows.length === 0) return null;
     const n = rows.length;
-    const innerWidth = SVG_WIDTH - PADDING_X * 2;
+    const innerWidth = chartWidth - PADDING_X * 2;
     const stepX = n > 1 ? innerWidth / (n - 1) : 0;
-    const singleX = SVG_WIDTH / 2;
+    const singleX = chartWidth / 2;
     const usableHeight = CHART_HEIGHT - PADDING_TOP - PADDING_BOTTOM;
 
     function buildLine(key) {
@@ -95,6 +102,19 @@ export default function PrsVsCalculatedChart({ userId }) {
     const prsLine = buildLine('prontidao_percebida');
     const calcLine = buildLine('prontidao');
 
+    // Rótulos grudados na ponta de cada curva, com anti-colisão vertical
+    // caso as duas séries terminem em alturas próximas.
+    const rawEndLabels = [];
+    if (prsLine.points.length > 0) {
+      const p = prsLine.points[prsLine.points.length - 1];
+      rawEndLabels.push({ key: 'prs', x: p.x, y: p.y, color: PRS_COLOR, text: 'PRS percebido' });
+    }
+    if (calcLine.points.length > 0) {
+      const p = calcLine.points[calcLine.points.length - 1];
+      rawEndLabels.push({ key: 'calc', x: p.x, y: p.y, color: CALC_COLOR, text: 'Prontidão calc.' });
+    }
+    const endLabels = resolveLabelCollisions(rawEndLabels, LABEL_MIN_GAP);
+
     const approxLabelWidth = 34;
     const maxDateLabels = Math.max(2, Math.floor(innerWidth / approxLabelWidth));
     const dateStep = n <= maxDateLabels ? 1 : Math.ceil(n / maxDateLabels);
@@ -106,8 +126,8 @@ export default function PrsVsCalculatedChart({ userId }) {
         label: formatDateShort(date),
       }));
 
-    return { prsLine, calcLine, dateTicks };
-  }, [rows]);
+    return { prsLine, calcLine, endLabels, dateTicks };
+  }, [rows, chartWidth]);
 
   const svgHeight = CHART_HEIGHT + AXIS_HEIGHT;
   const hasDivergence = rows.some((r) => r.divergencia_prs_alta);
@@ -118,7 +138,7 @@ export default function PrsVsCalculatedChart({ userId }) {
         PRS percebido × Prontidão calculada
       </div>
       <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, marginBottom: SPACING.sm }}>
-        Compara o que você reportou sentir (PRS) com o que o motor calculou a partir de todos os fatores. Pontos em vermelho marcam dias em que as duas medidas divergiram bastante.
+        Compara o que você reportou sentir (PRS) com o que o motor calculou a partir de todos os fatores — cada curva rotulada na própria ponta. Pontos em vermelho marcam dias em que as duas medidas divergiram bastante.
       </div>
 
       <div style={{ display: 'flex', gap: SPACING.md, marginBottom: SPACING.sm, fontSize: FONT.size.xs }}>
@@ -167,6 +187,22 @@ export default function PrsVsCalculatedChart({ userId }) {
                 stroke="#fff"
                 strokeWidth={p.divergente ? 2 : 1}
               />
+            ))}
+
+            {/* Rótulos de texto grudados na ponta de cada curva */}
+            {chart.endLabels.map((lbl) => (
+              <text
+                key={`end-label-${lbl.key}`}
+                x={lbl.x + 8}
+                y={lbl.y + 3}
+                textAnchor="start"
+                fontSize={FONT.size.xs}
+                fontFamily={FONT.family}
+                fontWeight={FONT.weight.bold}
+                fill={lbl.color}
+              >
+                {lbl.text}
+              </text>
             ))}
 
             <g transform={`translate(0, ${CHART_HEIGHT})`}>

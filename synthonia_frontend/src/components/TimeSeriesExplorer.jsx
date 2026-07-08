@@ -1,27 +1,35 @@
 // components/TimeSeriesExplorer.jsx
-// Gráfico pedido explicitamente por Val: eixo X = tempo, uma FILEIRA por
-// variável escolhida pelo usuário (em vez de todas sobrepostas no mesmo
-// eixo Y). Dados REAIS vindos de public.checkins (campos brutos reportados
-// pelo atleta) MESCLADOS por data com public.metricas_diarias (métricas
+// Gráfico "Explorador — tempo × variáveis": eixo X = tempo, TODAS as
+// variáveis selecionadas pelo usuário desenhadas SOBREPOSTAS no MESMO
+// gráfico (mesmo SVG, mesmos eixos X/Y), cada uma normalizada pra escala
+// 0-1 usando seu próprio min/max (ver VARIABLES) — assim curvas de
+// naturezas bem diferentes (ex.: HRV em ms e TSB em -50..50) cabem juntas
+// na mesma altura visual e dá pra comparar formato/tendência entre elas.
+// Dados REAIS vindos de public.checkins (campos brutos reportados pelo
+// atleta) MESCLADOS por data com public.metricas_diarias (métricas
 // calculadas pelo motor real: TRIMP, ATL/CTL/TSB, monotonia, janela de
 // lesão, prontidão calculada, recuperação física/mental, pontuação de sono,
 // %exaustão, %redução sugerida). RLS garante que o usuário só vê os
 // próprios registros em ambas as tabelas.
 //
-// Redesenho (layout "uma fileira por variável"): cada variável selecionada
-// ganha sua própria linha com título à esquerda + gráfico de linha curva à
-// direita, na escala PRÓPRIA daquela variável (não precisa mais normalizar
-// 0-1 pra dividir eixo Y com outras variáveis). Um único eixo de datas fica
-// embaixo de todas as fileiras, já que todas compartilham o mesmo intervalo
-// de tempo.
+// Formato (voltamos ao original + reforço pedido por Val): pills de seleção
+// no topo escolhem quais variáveis entram no overlay. Cada curva ganha um
+// RÓTULO DE TEXTO grudado diretamente nela (não só numa legenda separada) —
+// o nome curto da variável escrito ao lado do último ponto (mais recente),
+// na cor da própria linha, pra identificar cada curva sem precisar olhar
+// pra outro lugar. Quando dois rótulos terminam com alturas próximas,
+// aplicamos um anti-colisão simples (empurra verticalmente) pra não
+// sobrepor o texto. A legenda embaixo do gráfico continua existindo como
+// reforço, mostrando o valor bruto mais recente de cada variável.
 //
 // Nota sobre o caso de 1 único ponto: com poucos check-ins (ex.: só hoje),
 // uma linha de 1 ponto não desenha nada visível — isso é esperado e não é
 // bug de dados. Tratamos esse caso mostrando um marcador (círculo) com o
 // valor ao lado, em vez de uma linha.
 import React, { useEffect, useMemo, useState } from 'react';
-import { COLORS, FONT, RADIUS, SHADOW, SPACING, BREAKPOINTS } from '../theme';
+import { COLORS, FONT, RADIUS, SHADOW, SPACING } from '../theme';
 import { supabase } from '../supabaseClient';
+import { formatDateShort, formatValue, catmullRomPath, buildSegments, normalize, resolveLabelCollisions } from './chartUtils';
 
 // Paleta categórica para as linhas (não semafórica — aqui cor = identidade da
 // variável, não status de risco).
@@ -29,142 +37,50 @@ const LINE_COLORS = ['#378ADD', '#D85A30', '#639922', '#993C1D', '#7F77DD', '#D4
 
 // Variáveis brutas de check-in (public.checkins).
 const CHECKIN_VARIABLES = [
-  { key: 'prontidao_percebida', label: 'Prontidão percebida (PRS)', min: 0, max: 10, source: 'checkin' },
-  { key: 'qualidade_sono', label: 'Qualidade do sono', min: 1, max: 7, source: 'checkin' },
-  { key: 'duracao_sono_horas', label: 'Duração do sono (h)', min: 0, max: 12, source: 'checkin' },
-  { key: 'fadiga_geral', label: 'Fadiga geral (1=pior)', min: 1, max: 7, source: 'checkin' },
-  { key: 'estresse_percebido', label: 'Estresse percebido (1=pior)', min: 1, max: 7, source: 'checkin' },
-  { key: 'humor_disposicao', label: 'Humor/disposição (1=pior)', min: 1, max: 7, source: 'checkin' },
-  { key: 'dor_muscular', label: 'Dor muscular (1=pior)', min: 1, max: 7, source: 'checkin' },
-  { key: 'hrv_ms', label: 'HRV (ms)', min: 20, max: 150, source: 'checkin' },
-  { key: 'fc_repouso_bpm', label: 'FC de repouso (bpm)', min: 35, max: 100, source: 'checkin' },
+  { key: 'prontidao_percebida', label: 'Prontidão percebida (PRS)', shortLabel: 'PRS', min: 0, max: 10, source: 'checkin' },
+  { key: 'qualidade_sono', label: 'Qualidade do sono', shortLabel: 'Qual. sono', min: 1, max: 7, source: 'checkin' },
+  { key: 'duracao_sono_horas', label: 'Duração do sono (h)', shortLabel: 'Duração sono', min: 0, max: 12, source: 'checkin' },
+  { key: 'fadiga_geral', label: 'Fadiga geral (1=pior)', shortLabel: 'Fadiga', min: 1, max: 7, source: 'checkin' },
+  { key: 'estresse_percebido', label: 'Estresse percebido (1=pior)', shortLabel: 'Estresse', min: 1, max: 7, source: 'checkin' },
+  { key: 'humor_disposicao', label: 'Humor/disposição (1=pior)', shortLabel: 'Humor', min: 1, max: 7, source: 'checkin' },
+  { key: 'dor_muscular', label: 'Dor muscular (1=pior)', shortLabel: 'Dor muscular', min: 1, max: 7, source: 'checkin' },
+  { key: 'hrv_ms', label: 'HRV (ms)', shortLabel: 'HRV', min: 20, max: 150, source: 'checkin' },
+  { key: 'fc_repouso_bpm', label: 'FC de repouso (bpm)', shortLabel: 'FC repouso', min: 35, max: 100, source: 'checkin' },
 ];
 
 // Métricas calculadas (public.metricas_diarias), populadas pelo motor real via trigger.
 const METRICAS_VARIABLES = [
-  { key: 'prontidao', label: 'Prontidão calculada', min: 0, max: 10, source: 'metrica' },
-  { key: 'trimp_carga_diaria', label: 'TRIMP (carga diária)', min: 0, max: 600, source: 'metrica' },
-  { key: 'atl_7d', label: 'ATL (7d)', min: 0, max: 150, source: 'metrica' },
-  { key: 'ctl_28d', label: 'CTL (28d)', min: 0, max: 150, source: 'metrica' },
-  { key: 'tsb', label: 'TSB', min: -50, max: 50, source: 'metrica' },
-  { key: 'monotonia_diaria', label: 'Monotonia diária', min: 0, max: 5, source: 'metrica' },
-  { key: 'monotonia_semanal', label: 'Monotonia semanal', min: 0, max: 5, source: 'metrica' },
-  { key: 'indice_janela_lesao', label: 'Índice Janela de Lesão', min: 0, max: 10, source: 'metrica' },
-  { key: 'percentual_exaustao', label: '% Exaustão', min: 0, max: 100, source: 'metrica' },
-  { key: 'percentual_reducao_sugerida', label: '% Redução sugerida', min: 0, max: 70, source: 'metrica' },
-  { key: 'recuperacao_fisica', label: 'Recuperação física', min: 0, max: 10, source: 'metrica' },
-  { key: 'recuperacao_mental', label: 'Recuperação mental', min: 0, max: 10, source: 'metrica' },
-  { key: 'pontuacao_sono', label: 'Pontuação sono', min: 0, max: 10, source: 'metrica' },
+  { key: 'prontidao', label: 'Prontidão calculada', shortLabel: 'Prontidão', min: 0, max: 10, source: 'metrica' },
+  { key: 'trimp_carga_diaria', label: 'TRIMP (carga diária)', shortLabel: 'TRIMP', min: 0, max: 600, source: 'metrica' },
+  { key: 'atl_7d', label: 'ATL (7d)', shortLabel: 'ATL', min: 0, max: 150, source: 'metrica' },
+  { key: 'ctl_28d', label: 'CTL (28d)', shortLabel: 'CTL', min: 0, max: 150, source: 'metrica' },
+  { key: 'tsb', label: 'TSB', shortLabel: 'TSB', min: -50, max: 50, source: 'metrica' },
+  { key: 'monotonia_diaria', label: 'Monotonia diária', shortLabel: 'Monot. diária', min: 0, max: 5, source: 'metrica' },
+  { key: 'monotonia_semanal', label: 'Monotonia semanal', shortLabel: 'Monot. semanal', min: 0, max: 5, source: 'metrica' },
+  { key: 'indice_janela_lesao', label: 'Índice Janela de Lesão', shortLabel: 'Janela lesão', min: 0, max: 10, source: 'metrica' },
+  { key: 'percentual_exaustao', label: '% Exaustão', shortLabel: '% Exaustão', min: 0, max: 100, source: 'metrica' },
+  { key: 'percentual_reducao_sugerida', label: '% Redução sugerida', shortLabel: '% Redução', min: 0, max: 70, source: 'metrica' },
+  { key: 'recuperacao_fisica', label: 'Recuperação física', shortLabel: 'Rec. física', min: 0, max: 10, source: 'metrica' },
+  { key: 'recuperacao_mental', label: 'Recuperação mental', shortLabel: 'Rec. mental', min: 0, max: 10, source: 'metrica' },
+  { key: 'pontuacao_sono', label: 'Pontuação sono', shortLabel: 'Sono', min: 0, max: 10, source: 'metrica' },
 ];
 
 export const VARIABLES = [...CHECKIN_VARIABLES, ...METRICAS_VARIABLES];
 
-function normalize(value, min, max) {
-  if (value == null || Number.isNaN(value)) return null;
-  const clamped = Math.max(min, Math.min(max, value));
-  return (clamped - min) / (max - min || 1);
-}
-
-// Formata "2026-07-08" -> "08/07" (dia/mês compacto) sem depender de Date
-// (evita bugs de timezone quando a string já vem como data pura).
-function formatDateShort(isoDate) {
-  if (!isoDate) return '';
-  const parts = String(isoDate).split('-');
-  if (parts.length < 3) return isoDate;
-  const [, mm, dd] = parts;
-  return `${dd}/${mm}`;
-}
-
-// Formata número bruto pra exibição compacta perto do ponto: inteiros sem
-// casas decimais, fracionários com 1 casa (mantém "10" limpo, mas "6.5"
-// legível). Ex.: prontidão 7 -> "7", TSB -12.345 -> "-12.3".
-function formatValue(value) {
-  if (value == null) return '';
-  if (Number.isInteger(value)) return String(value);
-  return value.toFixed(1);
-}
-
-// Gera um path SVG suave (cardinal spline com tensão ~0.5, convertida para
-// curvas de Bézier cúbicas) a partir de uma lista de pontos {x, y}. Técnica
-// clássica: para cada segmento P[i]->P[i+1], os pontos de controle são
-// derivados da tangente estimada em cada ponto usando os vizinhos
-// (P[i-1], P[i+2]), escalada pela tensão. Não requer biblioteca externa.
-function catmullRomPath(points, tension = 0.5) {
-  if (points.length === 0) return '';
-  if (points.length === 1) return '';
-  if (points.length === 2) {
-    return `M ${points[0].x},${points[0].y} L ${points[1].x},${points[1].y}`;
-  }
-  const d = [`M ${points[0].x},${points[0].y}`];
-  const factor = tension / 2; // fator clássico de conversão cardinal->Bézier (com tensão 0.5 dá o padrão "Catmull-Rom" 1/6)
-  for (let i = 0; i < points.length - 1; i += 1) {
-    const p0 = points[i === 0 ? i : i - 1];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2 < points.length ? i + 2 : i + 1];
-
-    const cp1x = p1.x + (p2.x - p0.x) * factor;
-    const cp1y = p1.y + (p2.y - p0.y) * factor;
-    const cp2x = p2.x - (p3.x - p1.x) * factor;
-    const cp2y = p2.y - (p3.y - p1.y) * factor;
-
-    d.push(`C ${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`);
-  }
-  return d.join(' ');
-}
-
-// Quebra uma lista de pontos (já ordenada no tempo, mas podendo ter "buracos"
-// onde o dado é NULL) em segmentos contíguos de índices de rows consecutivos.
-// Isso garante que a curva NUNCA interpola por cima de um dia sem check-in —
-// ela simplesmente para e recomeça, igual à polyline original fazia ao pular
-// NULLs (mas ali a quebra "acontecia sozinha" pq eram pontos soltos; aqui
-// como desenhamos curva precisamos ser explícitos sobre onde ela quebra).
-function buildSegments(points) {
-  const segments = [];
-  let current = [];
-  let lastRowIndex = null;
-  for (const p of points) {
-    if (lastRowIndex != null && p.rowIndex !== lastRowIndex + 1) {
-      if (current.length > 0) segments.push(current);
-      current = [];
-    }
-    current.push(p);
-    lastRowIndex = p.rowIndex;
-  }
-  if (current.length > 0) segments.push(current);
-  return segments;
-}
-
-const ROW_HEIGHT = 92;
-const ROW_LABEL_WIDTH = 148;
-const ROW_LABEL_WIDTH_NARROW = 96;
-const CHART_HEIGHT = 72;
+const SVG_WIDTH = 640;
 const CHART_PADDING_X = 14;
 const CHART_PADDING_TOP = 22;
 const CHART_PADDING_BOTTOM = 14;
+const CHART_HEIGHT = 260;
 const AXIS_HEIGHT = 28;
-const SVG_TOTAL_WIDTH = 640; // largura "virtual" do viewBox; o SVG escala via % no CSS
-
-function useIsNarrow() {
-  const [narrow, setNarrow] = useState(
-    typeof window !== 'undefined' ? window.innerWidth < BREAKPOINTS.mobile : false
-  );
-  useEffect(() => {
-    function onResize() {
-      setNarrow(window.innerWidth < BREAKPOINTS.mobile);
-    }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-  return narrow;
-}
+const LABEL_GUTTER_RIGHT = 92; // espaço reservado à direita pros rótulos grudados na ponta das curvas
+const LABEL_MIN_GAP = 14; // distância vertical mínima entre dois rótulos de linha
 
 export default function TimeSeriesExplorer({ userId }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [selected, setSelected] = useState(['prontidao_percebida', 'qualidade_sono']);
-  const isNarrow = useIsNarrow();
 
   useEffect(() => {
     if (!userId) return;
@@ -222,13 +138,12 @@ export default function TimeSeriesExplorer({ userId }) {
     setSelected((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
   };
 
-  const labelWidth = isNarrow ? ROW_LABEL_WIDTH_NARROW : ROW_LABEL_WIDTH;
-  const chartWidth = SVG_TOTAL_WIDTH - labelWidth;
+  const chartWidth = SVG_WIDTH - LABEL_GUTTER_RIGHT;
 
-  // Monta, para cada variável selecionada, os pontos (x, y, valor bruto) já
-  // na escala PRÓPRIA daquela variável — sem normalizar 0-1, já que cada
-  // fileira tem seu próprio eixo Y e não precisa mais compartilhar espaço
-  // vertical com as outras variáveis.
+  // Monta, para cada variável selecionada, os pontos (x, y normalizado 0-1,
+  // valor bruto) já na MESMA escala 0-1 — todas as curvas compartilham o
+  // mesmo eixo Y do gráfico, por isso normalizamos cada uma pelo seu próprio
+  // min/max antes de desenhar.
   const chart = useMemo(() => {
     if (rows.length === 0) return null;
     const n = rows.length;
@@ -240,12 +155,12 @@ export default function TimeSeriesExplorer({ userId }) {
     // Regra de densidade de rótulos numéricos nos pontos: com poucos dias
     // (<=12) mostramos o valor em TODOS os pontos, pois cabe sem poluir.
     // Com mais dias, mostramos só primeiro, último, e a cada N pontos
-    // (N calculado pra render no máximo ~10 rótulos numéricos na fileira),
+    // (N calculado pra render no máximo ~10 rótulos numéricos por curva),
     // sempre garantindo que o ÚLTIMO ponto (mais recente) sempre tem valor.
     const maxLabels = 10;
     const labelStep = n <= 12 ? 1 : Math.ceil(n / maxLabels);
 
-    const rowsChart = selected.map((key, idx) => {
+    const lines = selected.map((key, idx) => {
       const meta = VARIABLES.find((v) => v.key === key);
       if (!meta) return null;
 
@@ -285,6 +200,7 @@ export default function TimeSeriesExplorer({ userId }) {
       return {
         key,
         label: meta.label,
+        shortLabel: meta.shortLabel || meta.label,
         color: LINE_COLORS[idx % LINE_COLORS.length],
         points: pointsWithLabelFlag,
         segments,
@@ -292,6 +208,17 @@ export default function TimeSeriesExplorer({ userId }) {
         lastRaw,
       };
     }).filter(Boolean);
+
+    // Rótulo de texto grudado na ponta (último ponto) de cada curva — posição
+    // Y desejada é a do próprio último ponto; resolve colisão vertical entre
+    // linhas cujo fim fica muito próximo em altura (empurra uma pra baixo da
+    // outra, mantendo um espaçamento mínimo de LABEL_MIN_GAP).
+    const rawEndLabels = lines.map((line) => {
+      const last = line.points[line.points.length - 1];
+      return { key: line.key, y: last.x != null ? last.y : CHART_PADDING_TOP, x: last.x, color: line.color, text: line.shortLabel };
+    });
+    const endLabels = resolveLabelCollisions(rawEndLabels, LABEL_MIN_GAP);
+    const endLabelByKey = new Map(endLabels.map((l) => [l.key, l]));
 
     // Rótulos do eixo X compartilhado: espaçamento dinâmico pra não colidir.
     // Estimativa de largura de cada rótulo de data ("dd/mm" ~ 30px) — cabe
@@ -308,10 +235,8 @@ export default function TimeSeriesExplorer({ userId }) {
         label: formatDateShort(date),
       }));
 
-    return { rowsChart, n, dateTicks };
+    return { lines, endLabelByKey, n, dateTicks };
   }, [rows, selected, chartWidth]);
-
-  const svgHeight = chart ? chart.rowsChart.length * ROW_HEIGHT + AXIS_HEIGHT : 0;
 
   return (
     <div style={{ backgroundColor: COLORS.surface, borderRadius: RADIUS.lg, boxShadow: SHADOW.card, padding: SPACING.lg, fontFamily: FONT.family }}>
@@ -319,7 +244,7 @@ export default function TimeSeriesExplorer({ userId }) {
         Explorador — tempo × variáveis
       </div>
       <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, marginBottom: SPACING.md }}>
-        Eixo X = data do check-in (comum a todas as fileiras abaixo). Cada variável selecionada ganha sua própria fileira, com escala própria no eixo Y. Inclui dados brutos do check-in e métricas calculadas (TRIMP, ATL/CTL/TSB, monotonia, janela de lesão etc.).
+        Eixo X = data do check-in. Todas as variáveis selecionadas ficam sobrepostas no MESMO gráfico, cada uma normalizada para uma escala 0-1 (usando o próprio mínimo/máximo) para caberem juntas — cada curva traz seu nome escrito ao lado do ponto mais recente, na própria cor, além da legenda de reforço abaixo. Inclui dados brutos do check-in e métricas calculadas (TRIMP, ATL/CTL/TSB, monotonia, janela de lesão etc.).
       </div>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: SPACING.md }}>
@@ -360,92 +285,87 @@ export default function TimeSeriesExplorer({ userId }) {
         </div>
       )}
 
-      {!loading && !error && rows.length > 0 && chart && chart.rowsChart.length > 0 && (
+      {!loading && !error && rows.length > 0 && chart && chart.lines.length > 0 && (
         <div style={{ border: `1px solid ${COLORS.border}`, borderRadius: RADIUS.md, padding: SPACING.sm, backgroundColor: COLORS.background }}>
-          <svg width="100%" viewBox={`0 0 ${SVG_TOTAL_WIDTH} ${svgHeight}`} preserveAspectRatio="xMinYMin meet">
-            {chart.rowsChart.map((row, rowIdx) => {
-              const rowY = rowIdx * ROW_HEIGHT;
-              return (
-                <g key={row.key} transform={`translate(0, ${rowY})`}>
-                  {/* Título da variável, coluna fixa à esquerda */}
-                  <foreignObject x={0} y={0} width={labelWidth - 8} height={ROW_HEIGHT}>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        height: ROW_HEIGHT,
-                        gap: 6,
-                        fontFamily: FONT.family,
-                        fontSize: FONT.size.xs,
-                        fontWeight: FONT.weight.semibold,
-                        color: COLORS.textPrimary,
-                        lineHeight: 1.25,
-                        paddingRight: 6,
-                      }}
+          <svg width="100%" viewBox={`0 0 ${SVG_WIDTH} ${CHART_HEIGHT + AXIS_HEIGHT}`} preserveAspectRatio="xMinYMin meet">
+            {/* Linha-base sutil do gráfico (fundo da escala normalizada) */}
+            <line
+              x1={0}
+              y1={CHART_PADDING_TOP + (CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM)}
+              x2={chartWidth}
+              y2={CHART_PADDING_TOP + (CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM)}
+              stroke={COLORS.border}
+              strokeWidth={1}
+            />
+
+            {chart.lines.map((line) => (
+              <g key={line.key}>
+                {line.isSinglePoint ? (
+                  <>
+                    <circle cx={line.points[0].x} cy={line.points[0].y} r={4.5} fill={line.color} stroke="#fff" strokeWidth={1.5} />
+                    <text
+                      x={line.points[0].x}
+                      y={line.points[0].y - 9}
+                      textAnchor="middle"
+                      fontSize={FONT.size.xs - 1}
+                      fontFamily={FONT.family}
+                      fontWeight={FONT.weight.semibold}
+                      fill={COLORS.textPrimary}
                     >
-                      <span style={{ width: 8, height: 8, minWidth: 8, borderRadius: '50%', backgroundColor: row.color, display: 'inline-block' }} />
-                      <span>{row.label}</span>
-                    </div>
-                  </foreignObject>
+                      {formatValue(line.points[0].value)}
+                    </text>
+                  </>
+                ) : (
+                  line.segments.map((d, i) => (
+                    <path key={i} d={d} fill="none" stroke={line.color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+                  ))
+                )}
 
-                  {/* Área do gráfico desta fileira */}
-                  <g transform={`translate(${labelWidth}, 0)`}>
-                    {/* Linha-base sutil da fileira */}
-                    <line
-                      x1={0}
-                      y1={CHART_PADDING_TOP + (CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM)}
-                      x2={chartWidth}
-                      y2={CHART_PADDING_TOP + (CHART_HEIGHT - CHART_PADDING_TOP - CHART_PADDING_BOTTOM)}
-                      stroke={COLORS.border}
-                      strokeWidth={1}
-                    />
-
-                    {row.isSinglePoint ? (
-                      <>
-                        <circle cx={row.points[0].x} cy={row.points[0].y} r={4.5} fill={row.color} stroke="#fff" strokeWidth={1.5} />
-                        <text
-                          x={row.points[0].x}
-                          y={row.points[0].y - 9}
-                          textAnchor="middle"
-                          fontSize={FONT.size.xs - 1}
-                          fontFamily={FONT.family}
-                          fontWeight={FONT.weight.semibold}
-                          fill={COLORS.textPrimary}
-                        >
-                          {formatValue(row.points[0].value)}
-                        </text>
-                      </>
-                    ) : (
-                      row.segments.map((d, i) => (
-                        <path key={i} d={d} fill="none" stroke={row.color} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
-                      ))
+                {!line.isSinglePoint && line.points.map((p) => (
+                  <g key={p.rowIndex}>
+                    <circle cx={p.x} cy={p.y} r={3} fill={line.color} stroke="#fff" strokeWidth={1} />
+                    {p.showLabel && (
+                      <text
+                        x={p.x}
+                        y={p.y - 8}
+                        textAnchor="middle"
+                        fontSize={FONT.size.xs - 1}
+                        fontFamily={FONT.family}
+                        fontWeight={FONT.weight.medium}
+                        fill={COLORS.textSecondary}
+                      >
+                        {formatValue(p.value)}
+                      </text>
                     )}
-
-                    {!row.isSinglePoint && row.points.map((p) => (
-                      <g key={p.rowIndex}>
-                        <circle cx={p.x} cy={p.y} r={3} fill={row.color} stroke="#fff" strokeWidth={1} />
-                        {p.showLabel && (
-                          <text
-                            x={p.x}
-                            y={p.y - 8}
-                            textAnchor="middle"
-                            fontSize={FONT.size.xs - 1}
-                            fontFamily={FONT.family}
-                            fontWeight={FONT.weight.medium}
-                            fill={COLORS.textSecondary}
-                          >
-                            {formatValue(p.value)}
-                          </text>
-                        )}
-                      </g>
-                    ))}
                   </g>
-                </g>
+                ))}
+              </g>
+            ))}
+
+            {/* Rótulo de texto grudado na ponta de cada curva — nome curto da
+                variável, na cor da linha, com anti-colisão vertical já
+                resolvido em chart.endLabelByKey. */}
+            {chart.lines.map((line) => {
+              const lbl = chart.endLabelByKey.get(line.key);
+              if (!lbl) return null;
+              return (
+                <text
+                  key={`end-label-${line.key}`}
+                  x={lbl.x + 8}
+                  y={lbl.y + 3}
+                  textAnchor="start"
+                  fontSize={FONT.size.xs}
+                  fontFamily={FONT.family}
+                  fontWeight={FONT.weight.bold}
+                  fill={lbl.color}
+                >
+                  {lbl.text}
+                </text>
               );
             })}
 
-            {/* Eixo X compartilhado — datas, embaixo de todas as fileiras */}
-            <g transform={`translate(${labelWidth}, ${chart.rowsChart.length * ROW_HEIGHT})`}>
+            {/* Eixo X — datas */}
+            <g transform={`translate(0, ${CHART_HEIGHT})`}>
               <line x1={0} y1={2} x2={chartWidth} y2={2} stroke={COLORS.border} strokeWidth={1} />
               {chart.dateTicks.map((t, i) => (
                 <text
@@ -462,13 +382,25 @@ export default function TimeSeriesExplorer({ userId }) {
               ))}
             </g>
           </svg>
+
+          {/* Legenda de reforço (mantida) — valor bruto mais recente de cada variável */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: SPACING.sm, paddingTop: SPACING.sm, borderTop: `1px solid ${COLORS.border}` }}>
+            {chart.lines.map((line) => (
+              <div key={line.key} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: FONT.size.xs }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', backgroundColor: line.color, display: 'inline-block' }} />
+                <span style={{ color: COLORS.textSecondary }}>{line.label}:</span>
+                <span style={{ color: COLORS.textPrimary, fontWeight: FONT.weight.semibold }}>{formatValue(line.lastRaw)}</span>
+              </div>
+            ))}
+          </div>
+
           <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, marginTop: SPACING.xs, textAlign: 'center' }}>
             {rows.length} dia(s) com dado — de {formatDateShort(rows[0].data_referencia)} a {formatDateShort(rows[rows.length - 1].data_referencia)}
           </div>
         </div>
       )}
 
-      {!loading && !error && rows.length > 0 && chart && chart.rowsChart.length === 0 && (
+      {!loading && !error && rows.length > 0 && chart && chart.lines.length === 0 && (
         <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary }}>
           Selecione ao menos uma variável acima para ver o gráfico.
         </div>
