@@ -22,6 +22,12 @@
 // NÃO foram tocadas (sinalização funcional de saúde). O restante do chrome
 // (header, CTA de check-in, cards) segue o novo sistema de marca — botão
 // principal usa `brandPrimary`, saudação com tipografia de título revisada.
+//
+// Streak de check-ins (Tarefa C do QA): badge "🔥 N dias seguidos" perto da
+// saudação, calculado a partir de checkins.data_referencia (dias consecutivos
+// terminando hoje ou ontem — se hoje ainda não tem check-in, a contagem
+// começa a partir de ontem, sem penalizar o atleta por ainda não ter feito o
+// check-in de hoje).
 import React, { useEffect, useState } from 'react';
 import { COLORS, FONT, RADIUS, SHADOW, SPACING, TOUCH_TARGET_MIN } from './theme';
 import ProgressBar from './components/ProgressBar';
@@ -149,14 +155,73 @@ function AltoRiscoCargaAlertBanner() {
   );
 }
 
+// Badge de streak de check-ins ("🔥 N dias seguidos"). Discreto — só um chip
+// pequeno perto da saudação, sem chamar atenção demais (pedido explícito:
+// "não precisa ser chamativo, só visível"). Não renderiza nada se streak < 1
+// (evita "🔥 0 dias seguidos", que soa mal e não agrega).
+function StreakBadge({ streak }) {
+  if (!streak || streak < 1) return null;
+  return (
+    <div
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 4,
+        padding: '3px 10px',
+        borderRadius: RADIUS.pill,
+        backgroundColor: COLORS.background,
+        border: `1px solid ${COLORS.border}`,
+        fontSize: FONT.size.xs,
+        fontWeight: FONT.weight.semibold,
+        color: COLORS.textSecondary,
+      }}
+    >
+      <span aria-hidden="true">🔥</span>
+      {streak} {streak === 1 ? 'dia seguido' : 'dias seguidos'}
+    </div>
+  );
+}
+
 const SONO_LABELS = ['', 'Muito ruim', 'Ruim', 'Meio fraca', 'Regular', 'Boa', 'Muito boa', 'Excelente'];
 const FADIGA_LABELS = ['', 'Exaustão total', 'Muito alta', 'Alta', 'Moderada', 'Leve', 'Muito leve', 'Nenhuma'];
+
+function todayIsoDate() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function isoDateMinusDays(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Calcula o streak de dias CONSECUTIVOS de check-in, terminando hoje ou
+ * ontem: se o atleta já fez check-in hoje, a contagem começa em hoje; senão,
+ * começa em ontem (não penaliza quem simplesmente ainda não fez o check-in
+ * de hoje). A partir daí, cada dia anterior sem check-in interrompe a
+ * contagem. `dates` é um array (ou Set-like) de strings "YYYY-MM-DD".
+ */
+function computeStreak(dateStrings) {
+  const dateSet = new Set(dateStrings);
+  const today = todayIsoDate();
+  let cursor = dateSet.has(today) ? today : isoDateMinusDays(today, 1);
+  let streak = 0;
+  while (dateSet.has(cursor)) {
+    streak += 1;
+    cursor = isoDateMinusDays(cursor, 1);
+  }
+  return streak;
+}
 
 export default function HomeScreen({ userId, profileName, onStartCheckin, onSignOut }) {
   const [loading, setLoading] = useState(true);
   const [checkin, setCheckin] = useState(null);
   const [error, setError] = useState(null);
   const [alertMetrics, setAlertMetrics] = useState(null);
+  const [streak, setStreak] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
@@ -164,8 +229,7 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
     async function loadToday() {
       setLoading(true);
       setError(null);
-      const now = new Date();
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const today = todayIsoDate();
       const { data, error: fetchError } = await supabase
         .from('checkins')
         .select('*')
@@ -210,14 +274,39 @@ export default function HomeScreen({ userId, profileName, onStartCheckin, onSign
     return () => { cancelled = true; };
   }, [userId]);
 
+  // Streak de check-ins (Tarefa C): busca todas as datas de check-in do
+  // atleta e calcula dias consecutivos terminando hoje ou ontem. Falha
+  // silenciosa igual aos alertas — é um plus, não deve quebrar a Home.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    async function loadStreak() {
+      const { data, error: fetchError } = await supabase
+        .from('checkins')
+        .select('data_referencia')
+        .eq('atleta_id', userId)
+        .order('data_referencia', { ascending: false });
+      if (cancelled) return;
+      if (fetchError) {
+        setStreak(0);
+        return;
+      }
+      const dates = (data || []).map((r) => r.data_referencia);
+      setStreak(computeStreak(dates));
+    }
+    loadStreak();
+    return () => { cancelled = true; };
+  }, [userId]);
+
   return (
     <div style={{ backgroundColor: COLORS.background, minHeight: '100vh', padding: SPACING.md, fontFamily: FONT.family }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: SPACING.md }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: SPACING.md }}>
         <div>
           <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary }}>Olá,</div>
           <div style={{ fontSize: FONT.size.title, fontWeight: FONT.weight.bold, color: COLORS.textPrimary, lineHeight: 1.2 }}>
             {profileName || '...'}
           </div>
+          <StreakBadge streak={streak} />
         </div>
         <button
           onClick={onSignOut}

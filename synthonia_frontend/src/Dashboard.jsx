@@ -32,7 +32,17 @@
 // Repaginação visual: apenas o "chrome" dos cards (borda superior sutil de
 // marca, título/tipografia, espaçamento) foi revisado — os `colorFn` acima
 // e os valores calculados continuam 100% intocados.
-import React, { useEffect, useState } from 'react';
+//
+// NOVIDADES (rodada de gráficos + UX):
+// - Tarefa A: 4 gráficos novos abaixo do TimeSeriesExplorer — PmcChart
+//   (ATL/CTL/TSB), WeeklyLoadChart (carga semanal), TodayRadarChart (radar do
+//   dia) e PrsVsCalculatedChart (PRS percebido vs prontidão calculada).
+// - Tarefa B: setas de tendência em cada card, comparando o valor mais
+//   recente com o valor de ~7 dias atrás (mesma consulta única de ~35 dias,
+//   reaproveitada por todos os cards — evita 12 queries separadas).
+// - Tarefa D: ícone "ⓘ" em cada card com explicação curta da métrica
+//   (InfoTooltip.jsx, popover simples sem biblioteca externa).
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   COLORS,
   FONT,
@@ -47,6 +57,49 @@ import {
 } from './theme';
 import { supabase } from './supabaseClient';
 import TimeSeriesExplorer from './components/TimeSeriesExplorer';
+import PmcChart from './components/PmcChart';
+import WeeklyLoadChart from './components/WeeklyLoadChart';
+import TodayRadarChart from './components/TodayRadarChart';
+import PrsVsCalculatedChart from './components/PrsVsCalculatedChart';
+import InfoTooltip from './components/InfoTooltip';
+
+// Explicações curtas, linguagem simples, sem jargão — usadas no InfoTooltip
+// de cada card (Tarefa D).
+const METRIC_EXPLANATIONS = {
+  trimp_carga_diaria: 'Carga do treino de ontem (esforço × duração). Quanto maior, mais puxado foi o treino.',
+  atl_7d: 'Fadiga aguda — o quanto seu corpo acumulou de cansaço nos últimos 7 dias.',
+  ctl_28d: 'Sua forma física de base, construída aos poucos nos últimos 28 dias.',
+  tsb: 'Equilíbrio entre forma e fadiga. Positivo = descansado. Muito negativo = cansaço acumulado.',
+  monotonia_diaria: "O quanto seu treino está 'sempre igual' — monotonia alta + carga alta é fator de risco de lesão.",
+  monotonia_semanal: "O quanto seu treino está 'sempre igual' na semana — monotonia alta + carga alta é fator de risco de lesão.",
+  indice_janela_lesao: 'Risco estimado combinando padrão de treino e seu equilíbrio de forma/fadiga.',
+  percentual_exaustao: 'O quanto de fadiga você reportou hoje, em porcentagem.',
+  percentual_reducao_sugerida: 'Quanto o app sugere reduzir o treino de hoje, considerando tudo.',
+  recuperacao_fisica: 'O quanto seu corpo parece recuperado hoje, baseado no que você reportou.',
+  recuperacao_mental: 'O quanto sua mente parece recuperada hoje, baseado no que você reportou.',
+  pontuacao_sono: 'Nota combinando duração e regularidade do seu sono.',
+  prontidao: 'Nota geral de prontidão para treinar hoje, combinando todos os outros fatores.',
+};
+
+// Direção "boa" de cada métrica, para a seta de tendência (Tarefa B).
+// 'up'    = subir é bom (prontidão, recuperação, sono).
+// 'down'  = descer é bom (%exaustão, %redução, monotonia, índice de lesão).
+// 'none'  = sem direção simples de "melhor" (TSB) — seta neutra/omitida.
+const TREND_DIRECTION = {
+  prontidao: 'up',
+  trimp_carga_diaria: 'none', // carga não tem "melhor" isolado
+  atl_7d: 'none',
+  ctl_28d: 'none',
+  tsb: 'none',
+  monotonia_diaria: 'down',
+  monotonia_semanal: 'down',
+  indice_janela_lesao: 'down',
+  percentual_exaustao: 'down',
+  percentual_reducao_sugerida: 'down',
+  recuperacao_fisica: 'up',
+  recuperacao_mental: 'up',
+  pontuacao_sono: 'up',
+};
 
 const CARD_DEFS = [
   { key: 'prontidao', title: 'Prontidão', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColor(v) },
@@ -64,12 +117,42 @@ const CARD_DEFS = [
   { key: 'pontuacao_sono', title: 'Pontuação de sono', unit: '/10', decimals: 1, colorFn: (v) => getSemaphoreColor(v) },
 ];
 
-function MetricCard({ title, value, unit, decimals, colorFn }) {
+// Limiar de "estável" para a seta de tendência: variação relativa menor que
+// isso conta como seta neutra (→) em vez de subida/descida.
+const STABLE_THRESHOLD_PCT = 5;
+
+/**
+ * Calcula a seta de tendência (↑/↓/→) comparando o valor atual com o valor
+ * de referência de ~7 dias atrás, considerando a direção "boa" da métrica.
+ * Retorna null quando não há seta a mostrar (métrica sem direção definida,
+ * ou faltando um dos dois valores).
+ */
+function computeTrend(key, current, previous) {
+  if (current == null || previous == null) return null;
+  const direction = TREND_DIRECTION[key];
+  if (!direction || direction === 'none') return null;
+
+  const base = Math.abs(previous) > 1e-9 ? Math.abs(previous) : 1e-9;
+  const relChangePct = ((current - previous) / base) * 100;
+
+  if (Math.abs(relChangePct) < STABLE_THRESHOLD_PCT) {
+    return { arrow: '→', label: 'estável' };
+  }
+  const wentUp = current > previous;
+  const isGood = direction === 'up' ? wentUp : !wentUp;
+  return {
+    arrow: wentUp ? '↑' : '↓',
+    label: isGood ? 'melhorou' : 'piorou',
+  };
+}
+
+function MetricCard({ title, value, unit, decimals, colorFn, explanation, trend }) {
   const hasValue = value != null && !Number.isNaN(value);
   const valueColor = hasValue && colorFn ? colorFn(value) : COLORS.textPrimary;
   return (
     <div
       style={{
+        position: 'relative',
         backgroundColor: COLORS.surface,
         borderRadius: RADIUS.md,
         boxShadow: SHADOW.card,
@@ -79,13 +162,28 @@ function MetricCard({ title, value, unit, decimals, colorFn }) {
         minWidth: 0,
       }}
     >
-      <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, fontWeight: FONT.weight.semibold, marginBottom: SPACING.xs }}>
+      {explanation && (
+        <div style={{ position: 'absolute', top: SPACING.xs, right: SPACING.xs }}>
+          <InfoTooltip text={explanation} />
+        </div>
+      )}
+      <div style={{ fontSize: FONT.size.xs, color: COLORS.textTertiary, fontWeight: FONT.weight.semibold, marginBottom: SPACING.xs, paddingRight: 20 }}>
         {title}
       </div>
       {hasValue ? (
-        <div style={{ fontSize: FONT.size.xl, fontWeight: FONT.weight.bold, color: valueColor }}>
-          {Number(value).toFixed(decimals)}
-          <span style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, fontWeight: FONT.weight.medium }}> {unit}</span>
+        <div style={{ fontSize: FONT.size.xl, fontWeight: FONT.weight.bold, color: valueColor, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+          <span>
+            {Number(value).toFixed(decimals)}
+            <span style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, fontWeight: FONT.weight.medium }}> {unit}</span>
+          </span>
+          {trend && (
+            <span
+              title={`${trend.label} nos últimos ~7 dias`}
+              style={{ fontSize: FONT.size.md, color: COLORS.textTertiary, fontWeight: FONT.weight.bold }}
+            >
+              {trend.arrow}
+            </span>
+          )}
         </div>
       ) : (
         <div style={{ fontSize: FONT.size.sm, color: COLORS.textTertiary, fontStyle: 'italic' }}>
@@ -96,8 +194,15 @@ function MetricCard({ title, value, unit, decimals, colorFn }) {
   );
 }
 
+const HISTORY_KEYS = [
+  'data_referencia', 'trimp_carga_diaria', 'atl_7d', 'ctl_28d', 'tsb',
+  'monotonia_diaria', 'monotonia_semanal', 'indice_janela_lesao', 'prontidao',
+  'recuperacao_fisica', 'recuperacao_mental', 'pontuacao_sono',
+  'percentual_exaustao', 'percentual_reducao_sugerida',
+];
+
 function MetricsGrid({ userId }) {
-  const [metrics, setMetrics] = useState(null);
+  const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -107,25 +212,58 @@ function MetricsGrid({ userId }) {
     async function load() {
       setLoading(true);
       setError(null);
+      // Uma única query trazendo os últimos ~35 dias (em vez de uma query por
+      // card): dá margem suficiente para sempre existir um registro perto de
+      // 7 dias atrás, mesmo com alguns dias sem check-in no meio.
       const { data, error: fetchError } = await supabase
         .from('metricas_diarias')
-        .select('data_referencia, trimp_carga_diaria, atl_7d, ctl_28d, tsb, monotonia_diaria, monotonia_semanal, indice_janela_lesao, prontidao, recuperacao_fisica, recuperacao_mental, pontuacao_sono, percentual_exaustao, percentual_reducao_sugerida')
+        .select(HISTORY_KEYS.join(', '))
         .eq('atleta_id', userId)
-        .not('prontidao', 'is', null)
         .order('data_referencia', { ascending: false })
-        .limit(1);
+        .limit(35);
       if (cancelled) return;
       if (fetchError) {
         setError(fetchError.message);
         setLoading(false);
         return;
       }
-      setMetrics((data && data[0]) || null);
+      setHistory(data || []);
       setLoading(false);
     }
     load();
     return () => { cancelled = true; };
   }, [userId]);
+
+  // Registro mais recente com prontidão calculada (mesmo critério de sempre).
+  const metrics = useMemo(() => {
+    return history.find((r) => r.prontidao != null) || null;
+  }, [history]);
+
+  // Registro de referência "~7 dias atrás": entre os registros mais antigos
+  // que `metrics`, escolhe o que tem a data mais próxima de (data do
+  // registro atual - 7 dias). Não exige que seja exatamente 7 dias, já que
+  // pode haver dias sem check-in.
+  const previousMetrics = useMemo(() => {
+    if (!metrics) return null;
+    const targetDate = new Date(`${metrics.data_referencia}T00:00:00Z`);
+    targetDate.setUTCDate(targetDate.getUTCDate() - 7);
+
+    let best = null;
+    let bestDiff = Infinity;
+    for (const r of history) {
+      if (r.data_referencia === metrics.data_referencia) continue;
+      const d = new Date(`${r.data_referencia}T00:00:00Z`);
+      const diff = Math.abs(d.getTime() - targetDate.getTime());
+      // Só considera candidatos dentro de uma janela de +/- 3 dias do alvo,
+      // para não comparar com algo tempor demais distante caso o histórico
+      // tenha um buraco grande.
+      if (diff <= 3 * 24 * 60 * 60 * 1000 && diff < bestDiff) {
+        best = r;
+        bestDiff = diff;
+      }
+    }
+    return best;
+  }, [history, metrics]);
 
   if (loading) {
     return <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary, marginBottom: SPACING.md }}>Carregando métricas…</div>;
@@ -161,6 +299,8 @@ function MetricsGrid({ userId }) {
             unit={def.unit}
             decimals={def.decimals}
             colorFn={def.colorFn}
+            explanation={METRIC_EXPLANATIONS[def.key]}
+            trend={computeTrend(def.key, metrics[def.key], previousMetrics ? previousMetrics[def.key] : null)}
           />
         ))}
       </div>
@@ -209,6 +349,10 @@ export default function Dashboard({ embedded = false, userId }) {
         <>
           <MetricsGrid userId={userId} />
           <TimeSeriesExplorer userId={userId} />
+          <PmcChart userId={userId} />
+          <WeeklyLoadChart userId={userId} />
+          <TodayRadarChart userId={userId} />
+          <PrsVsCalculatedChart userId={userId} />
         </>
       ) : (
         <div style={{ fontSize: FONT.size.sm, color: COLORS.textSecondary }}>
