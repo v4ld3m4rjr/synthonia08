@@ -40,6 +40,24 @@ const buttonStyle = (enabled) => ({
   transition: 'background-color 0.15s ease',
 });
 
+// AuthError às vezes chega sem um `.message` utilizável (ex: erro 500 do
+// GoTrue com corpo fora do formato esperado pelo supabase-js) — nesses casos
+// o valor podia acabar sendo renderizado como "{}" na tela. Essa função
+// sempre devolve um texto legível, nunca o objeto bruto.
+function extractAuthErrorMessage(err) {
+  if (!err) return 'Não foi possível completar a ação. Tente novamente.';
+  if (typeof err.message === 'string' && err.message.trim().length > 0 && err.message.trim() !== '{}') {
+    return err.message;
+  }
+  if (typeof err.error_description === 'string' && err.error_description.trim().length > 0) {
+    return err.error_description;
+  }
+  if (typeof err.status === 'number') {
+    return `Não foi possível completar a ação agora (erro ${err.status}). Tente novamente em instantes.`;
+  }
+  return 'Não foi possível completar a ação. Tente novamente em instantes.';
+}
+
 export default function Auth({ onAuthenticated }) {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
@@ -64,7 +82,7 @@ export default function Auth({ onAuthenticated }) {
       });
       setLoading(false);
       if (signUpError) {
-        setError(signUpError.message);
+        setError(extractAuthErrorMessage(signUpError));
         return;
       }
       // Se o projeto exigir confirmação de e-mail, session vem null aqui.
@@ -84,7 +102,7 @@ export default function Auth({ onAuthenticated }) {
     });
     setLoading(false);
     if (signInError) {
-      setError(signInError.message);
+      setError(extractAuthErrorMessage(signInError));
       return;
     }
     onAuthenticated?.(data.session);
