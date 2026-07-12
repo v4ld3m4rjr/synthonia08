@@ -1,9 +1,16 @@
 // Auth.jsx
 // Tela real de login/cadastro usando Supabase Auth (email + senha).
-// Isso é o que faltava para o app ter "tela de login e dados individualizados":
-// cada conta criada aqui vira uma linha em auth.users, isolada por RLS de
-// todas as tabelas (profiles, checkins, metricas_diarias etc — ver
-// synthonia_backend_schema.md).
+//
+// MUDANÇA (decisão do Val, para destravar cadastro sem depender de e-mail
+// funcionando/SMTP/DNS): em vez de confiar na confirmação por e-mail do
+// Supabase (que exige SMTP configurado e vinha travando cadastros reais com
+// "email rate limit exceeded" / falhas de domínio), o cadastro agora pede
+// CONFIRMAÇÃO DE E-MAIL E DE SENHA digitando duas vezes cada um — validação
+// no próprio formulário, sem depender de nenhum e-mail ser enviado. Isso
+// exige que "Confirm email" esteja DESLIGADO nas configurações de
+// Authentication do projeto Supabase (senão o Supabase ainda vai tentar
+// mandar e-mail de confirmação por baixo dos panos e a conta ficaria pendente
+// mesmo com os campos batendo aqui). Ver nota em handleSubmit.
 //
 // Repaginação visual: faixa superior com o gradiente de marca (identidade
 // SynthonIA — quente->frio, ver theme.js) por trás do wordmark, dando
@@ -24,6 +31,11 @@ const inputStyle = {
   minHeight: TOUCH_TARGET_MIN,
 };
 
+const inputErrorStyle = {
+  ...inputStyle,
+  border: `1px solid ${COLORS.risk}`,
+};
+
 const buttonStyle = (enabled) => ({
   width: '100%',
   minHeight: TOUCH_TARGET_MIN,
@@ -39,6 +51,14 @@ const buttonStyle = (enabled) => ({
   boxShadow: enabled ? SHADOW.brandGlow : 'none',
   transition: 'background-color 0.15s ease',
 });
+
+const fieldLabelStyle = {
+  fontSize: FONT.size.xs,
+  color: COLORS.textTertiary,
+  fontWeight: FONT.weight.semibold,
+  marginBottom: 4,
+  display: 'block',
+};
 
 // AuthError às vezes chega sem um `.message` utilizável (ex: erro 500 do
 // GoTrue com corpo fora do formato esperado pelo supabase-js) — nesses casos
@@ -61,12 +81,28 @@ function extractAuthErrorMessage(err) {
 export default function Auth({ onAuthenticated }) {
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [email, setEmail] = useState('');
+  const [emailConfirm, setEmailConfirm] = useState('');
   const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [infoMessage, setInfoMessage] = useState(null);
 
-  const canSubmit = email.trim().length > 3 && password.length >= 6 && !loading;
+  const emailsMatch = mode === 'login' || (emailConfirm.length > 0 && email.trim().toLowerCase() === emailConfirm.trim().toLowerCase());
+  const passwordsMatch = mode === 'login' || (passwordConfirm.length > 0 && password === passwordConfirm);
+  const emailMismatchVisible = mode === 'signup' && emailConfirm.length > 0 && !emailsMatch;
+  const passwordMismatchVisible = mode === 'signup' && passwordConfirm.length > 0 && !passwordsMatch;
+
+  const canSubmit =
+    email.trim().length > 3 &&
+    password.length >= 6 &&
+    !loading &&
+    (mode === 'login' || (emailsMatch && passwordsMatch));
+
+  const resetConfirmFields = () => {
+    setEmailConfirm('');
+    setPasswordConfirm('');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -85,10 +121,15 @@ export default function Auth({ onAuthenticated }) {
         setError(extractAuthErrorMessage(signUpError));
         return;
       }
-      // Se o projeto exigir confirmação de e-mail, session vem null aqui.
+      // Com "Confirm email" desligado no projeto Supabase, data.session já
+      // vem preenchida aqui e a pessoa entra direto — não depende de nenhum
+      // e-mail ser enviado. Se por acaso a confirmação ainda estiver ligada
+      // no projeto (configuração não aplicada), session vem null; mantemos um
+      // aviso de fallback nesse caso para não deixar a pessoa sem feedback.
       if (!data.session) {
-        setInfoMessage('Conta criada! Verifique seu e-mail para confirmar antes de entrar (ou, se a confirmação estiver desativada no projeto, já pode fazer login).');
+        setInfoMessage('Conta criada! Se pedir confirmação por e-mail, verifique sua caixa de entrada antes de entrar — ou tente entrar direto, pode já estar liberado.');
         setMode('login');
+        resetConfirmFields();
         return;
       }
       onAuthenticated?.(data.session);
@@ -170,22 +211,67 @@ export default function Auth({ onAuthenticated }) {
           </p>
 
           <form onSubmit={handleSubmit}>
-            <input
-              type="email"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              style={inputStyle}
-              autoComplete="email"
-            />
-            <input
-              type="password"
-              placeholder="Senha (mínimo 6 caracteres)"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={inputStyle}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            />
+            <div>
+              {mode === 'signup' && <label style={fieldLabelStyle}>E-mail</label>}
+              <input
+                type="email"
+                placeholder="seu@email.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                style={inputStyle}
+                autoComplete="email"
+              />
+            </div>
+
+            {mode === 'signup' && (
+              <div>
+                <label style={fieldLabelStyle}>Confirme o e-mail</label>
+                <input
+                  type="email"
+                  placeholder="digite o e-mail de novo"
+                  value={emailConfirm}
+                  onChange={(e) => setEmailConfirm(e.target.value)}
+                  style={emailMismatchVisible ? inputErrorStyle : inputStyle}
+                  autoComplete="email"
+                />
+                {emailMismatchVisible && (
+                  <div style={{ color: COLORS.risk, fontSize: FONT.size.xs, marginTop: -8, marginBottom: SPACING.sm }}>
+                    Os e-mails não coincidem.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div>
+              {mode === 'signup' && <label style={fieldLabelStyle}>Senha</label>}
+              <input
+                type="password"
+                placeholder="Senha (mínimo 6 caracteres)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                style={inputStyle}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              />
+            </div>
+
+            {mode === 'signup' && (
+              <div>
+                <label style={fieldLabelStyle}>Confirme a senha</label>
+                <input
+                  type="password"
+                  placeholder="digite a senha de novo"
+                  value={passwordConfirm}
+                  onChange={(e) => setPasswordConfirm(e.target.value)}
+                  style={passwordMismatchVisible ? inputErrorStyle : inputStyle}
+                  autoComplete="new-password"
+                />
+                {passwordMismatchVisible && (
+                  <div style={{ color: COLORS.risk, fontSize: FONT.size.xs, marginTop: -8, marginBottom: SPACING.sm }}>
+                    As senhas não coincidem.
+                  </div>
+                )}
+              </div>
+            )}
 
             {error && (
               <div style={{ color: COLORS.risk, fontSize: FONT.size.sm, marginBottom: SPACING.sm }}>{error}</div>
@@ -200,7 +286,12 @@ export default function Auth({ onAuthenticated }) {
           </form>
 
           <button
-            onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setInfoMessage(null); }}
+            onClick={() => {
+              setMode(mode === 'login' ? 'signup' : 'login');
+              setError(null);
+              setInfoMessage(null);
+              resetConfirmFields();
+            }}
             style={{ border: 'none', background: 'none', color: COLORS.brandBlue, marginTop: SPACING.lg, width: '100%', minHeight: TOUCH_TARGET_MIN, cursor: 'pointer', fontSize: FONT.size.sm, fontWeight: FONT.weight.medium }}
           >
             {mode === 'login' ? 'Ainda não tem conta? Criar uma' : 'Já tem conta? Entrar'}
